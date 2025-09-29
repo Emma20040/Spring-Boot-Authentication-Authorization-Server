@@ -34,3 +34,7 @@ build/
 .env
 .env.*
 
+#public and private keys
+/src/resources/private.key
+/src/resources/public.key
+
