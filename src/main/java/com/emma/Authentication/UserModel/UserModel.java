@@ -58,5 +58,10 @@ public class UserModel {
         updatedAt = LocalDateTime.now();
     }
 
+    public boolean isEnable() {
+
+        return enable;
+    }
+
 
 }
