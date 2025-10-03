@@ -30,7 +30,7 @@ public class EmailServices {
 
         helper.setTo(to);
         helper.setSubject(subject);
-        helper.setText(htmlContent, true); // ← The key: true means HTML
+        helper.setText(htmlContent, true); // The key: true means HTML
 
         emailSender.send(message);
     }

@@ -1,7 +1,9 @@
 package com.emma.Authentication.Services;
 
+import com.emma.Authentication.DTOs.LoginResponse;
 import com.emma.Authentication.Repositories.UserRepository;
 import com.emma.Authentication.UserModel.UserModel;
+import com.emma.Authentication.Utils.JwtActions;
 import jakarta.mail.MessagingException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -24,6 +26,8 @@ public class AuthService {
     private final EmailServices emailServices;
     private final BCryptPasswordEncoder passwordEncoder;
     private final UserRepository userRepository;
+    private final RefreshTokenService refreshTokenService;
+    private final JwtActions jwtActions;
 
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -33,11 +37,14 @@ public class AuthService {
     private final String PRE_VERIFICATION_USER_KEY = "pre_verification_user:";
 
     public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder,
-                       EmailServices emailServices, RedisTemplate<String, Object> redisTemplate) {
+                       EmailServices emailServices, RedisTemplate<String, Object> redisTemplate,
+                       RefreshTokenService refreshTokenService, JwtActions jwtActions) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailServices = emailServices;
         this.redisTemplate = redisTemplate;
+        this.refreshTokenService= refreshTokenService;
+        this.jwtActions= jwtActions;
     }
 
 //    get user by username
@@ -211,6 +218,51 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "Failed to send verification email. Please try again.");
         }
+    }
+
+
+
+//    manual Login
+    public LoginResponse manualLogin(String emailOrUsername, String password) {
+        var user = findUserByEmailOrUsername(emailOrUsername)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Invalid login credentials"));
+
+        if (!user.isEnable()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email not verified verify email and try again");
+        }
+
+        if (!verifyPassword(password, user.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid login credentials");
+        }
+
+        // Generate JWT
+        String jwtToken = jwtActions.jwtCreate(user.getId(), user.getEmail(), user.getUsername(), user.getRole().toString());
+
+        // Generate and store refresh token
+        String refreshToken = refreshTokenService.generateAndStoreRefreshToken(user.getId().toString());
+
+        return new LoginResponse(jwtToken, refreshToken, "Login successful");
+    }
+
+
+    // refreshTokens method:
+    public LoginResponse refreshTokens(String refreshToken) {
+        // Validate refresh token and get user ID
+        String userId = refreshTokenService.validateAndGetUserId(refreshToken);
+
+        // Get user from database
+        UserModel user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        // Generate new JWT using JwtActions
+        String newJwt = jwtActions.jwtCreate(user.getId(), user.getEmail(),
+                user.getUsername(), user.getRole().toString());
+
+        // Rotate refresh token (invalidate old, generate new)
+        String newRefreshToken = refreshTokenService.rotateRefreshToken(refreshToken);
+
+        return new LoginResponse(newJwt, newRefreshToken, "Tokens refreshed successfully");
     }
 
 }
