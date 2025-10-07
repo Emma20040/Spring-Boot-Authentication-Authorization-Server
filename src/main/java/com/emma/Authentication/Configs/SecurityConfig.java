@@ -37,6 +37,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/resend-verification").permitAll()
                         .requestMatchers(HttpMethod.POST, "api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "api/auth/refresh").permitAll()
+                        .requestMatchers(HttpMethod.POST, "api/auth/logout").authenticated()
+                        .requestMatchers(HttpMethod.POST, "api/auth/logout-all").authenticated()
                         .anyRequest().authenticated())
                 .oauth2Login(withDefaults())
                 .oauth2ResourceServer(config -> config.jwt(jwt -> jwt.decoder(jwtConfig.jwtDecoder())));

@@ -8,6 +8,8 @@ import jakarta.mail.MessagingException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -16,18 +18,24 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
 import static com.emma.Authentication.enums.Roles.USER;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 @Service
 public class AuthService {
+    private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
     private final EmailServices emailServices;
     private final BCryptPasswordEncoder passwordEncoder;
     private final UserRepository userRepository;
     private final RefreshTokenService refreshTokenService;
     private final JwtActions jwtActions;
+    private final JwtBlacklistService jwtBlacklistService;
 
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -38,13 +46,15 @@ public class AuthService {
 
     public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder,
                        EmailServices emailServices, RedisTemplate<String, Object> redisTemplate,
-                       RefreshTokenService refreshTokenService, JwtActions jwtActions) {
+                       RefreshTokenService refreshTokenService, JwtActions jwtActions,
+                       JwtBlacklistService jwtBlacklistService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailServices = emailServices;
         this.redisTemplate = redisTemplate;
         this.refreshTokenService= refreshTokenService;
         this.jwtActions= jwtActions;
+        this.jwtBlacklistService = jwtBlacklistService;
     }
 
 //    get user by username
@@ -263,6 +273,62 @@ public class AuthService {
         String newRefreshToken = refreshTokenService.rotateRefreshToken(refreshToken);
 
         return new LoginResponse(newJwt, newRefreshToken, "Tokens refreshed successfully");
+    }
+
+
+    // Logout - single device only
+    public void logoutSingleDevice(String jwtToken, String refreshToken) {
+        try {
+            // Extract user info from JWT for logging
+            var jwt = jwtActions.decodeToken(jwtToken);
+            String userId = jwt.getSubject();
+
+//            verify refresh token ownership
+            if (!refreshTokenService.isRefreshTokenValidForUser(refreshToken, userId)) {
+                logger.warn("Attempt to invalidate refresh token {} for user {} failed: token does not belong to user.",
+                        refreshToken, userId);
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid refresh token.");
+            }
+
+            // Blacklist the JWT
+            Instant expiration = jwt.getExpiresAt();
+            jwtBlacklistService.blacklistToken(jwtToken, expiration);
+
+            // Invalidate the specific refresh token (single device)
+            refreshTokenService.invalidateRefreshToken(refreshToken);
+
+            logger.info("User {} logged out from single device. JWT blacklisted and refresh token invalidated.", userId);
+
+        } catch (Exception e) {
+            logger.error("Error during single device logout", e);
+            if (e instanceof ResponseStatusException){
+                throw e;
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid token");
+        }
+    }
+
+
+    // Logout from all devices
+    public void logoutAllDevices(String jwtToken) {
+        try {
+            // Extract user ID from JWT
+            var jwt = jwtActions.decodeToken(jwtToken);
+            String userId = jwt.getSubject();
+
+            // Blacklist the current JWT
+            Instant expiration = jwt.getExpiresAt();
+            jwtBlacklistService.blacklistToken(jwtToken, expiration);
+
+            // Invalidate ALL refresh tokens for this user
+            refreshTokenService.invalidateAllForUser(userId);
+
+            logger.info("User {} logged out from all devices. All sessions terminated.", userId);
+
+        } catch (Exception e) {
+            logger.error("Error during logout all devices", e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid token");
+        }
     }
 
 }

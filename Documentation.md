@@ -51,7 +51,7 @@ This document outlines the design and functionality of the User Authentication a
 - Hybrid Rate Limiting:
   - Email-based: 3–5 requests/hour (e.g., reset/signup)
   - IP-based fallback: 10 requests/hour for unauthenticated endpoints
-- Logout: Blacklists JWT and invalidates refresh token in Redis to end session
+- Logout: Blacklists JWT and invalidates refresh token in Redis to end session(from a single device and all devices)
 - Other: HTTPS, secure tokens (UUID/cryptographically secure), logging
 
 ## Features
@@ -62,7 +62,7 @@ This document outlines the design and functionality of the User Authentication a
 5. Account Linking: Manual users link Google accounts with password; issues JWT + refresh token
 6. Password Reset: Email-based link, 24-hour expiration; issues JWT + refresh token
 7. JWT Refresh: Refreshes JWT using refresh token, maintains login until logout
-8. Logout: Invalidates JWT and refresh token, ends session
+8. Logout: Invalidates JWT and refresh token, ends session(from a single and all devices)
 9. Role-Based Access: Restrict endpoints (e.g., /api/admin for ROLE_ADMIN)
 10. Bot/Abuse Protection: reCAPTCHA v3, hybrid rate limiting
 
@@ -83,6 +83,7 @@ This document outlines the design and functionality of the User Authentication a
 - POST /api/auth/link-google: {link_token, password}; links Google account, issues JWT + refresh token
 - POST /api/auth/refresh: {refresh_token}; refreshes JWT
 - POST /api/auth/logout: Authorization: Bearer <jwt>; blacklists JWT, invalidates refresh token
+- POST /api/auth/logout-all: Authorization: Bearer <jwt>; blacklists JWT, invalidates all refresh tokens
 - /api/admin: Example endpoint, requires ROLE_ADMIN
 
 ## Detailed Flows
@@ -136,6 +137,7 @@ This document outlines the design and functionality of the User Authentication a
 2. Validate JWT, blacklist JWT, invalidate refresh token in Redis
 3. Return “Logged out successfully”
 4. JWT filter rejects blacklisted tokens
+5. Redis removes refresh token 
 
 ## Edge Cases and Handling
 1. Duplicate Email/Username: Return “Email/username already taken.”

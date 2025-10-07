@@ -14,7 +14,7 @@ import java.util.UUID;
 
 @Service
 public class JwtActions {
-    @Value("${jwt.expiration:300}")
+    @Value("${jwt.expiration:900}")
     private Long jwtExpiration;
 
     private final JwtConfig jwtConfig;
