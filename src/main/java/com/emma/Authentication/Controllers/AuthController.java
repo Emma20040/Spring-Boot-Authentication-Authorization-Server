@@ -2,6 +2,7 @@ package com.emma.Authentication.Controllers;
 
 import com.emma.Authentication.DTOs.*;
 import com.emma.Authentication.Services.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -65,6 +66,37 @@ public class AuthController {
                 "refreshToken", response.refreshToken(),
                 "message", response.message()
         ));
+    }
+
+
+
+// ----------- LOGOUT -----------
+// Logout - single device (current session only)
+    @PostMapping("/logout")
+    public ResponseEntity<Map<String, String>> logoutUser(
+            HttpServletRequest request,
+            @RequestBody @Valid LogoutRequest logoutRequest) {
+
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String jwtToken = authHeader.substring(7);
+            authService.logoutSingleDevice(jwtToken, logoutRequest.refreshToken());
+            return ResponseEntity.ok(Map.of("message", "Logged out successfully from this device"));
+        }
+        return ResponseEntity.badRequest().body(Map.of("error", "Invalid authorization header"));
+    }
+
+
+    // Logout - all devices
+    @PostMapping("/logout-all")
+    public ResponseEntity<Map<String, String>> logoutAllDevices(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String jwtToken = authHeader.substring(7);
+            authService.logoutAllDevices(jwtToken);
+            return ResponseEntity.ok(Map.of("message", "Logged out from all devices successfully"));
+        }
+        return ResponseEntity.badRequest().body(Map.of("error", "Invalid authorization header"));
     }
 
 

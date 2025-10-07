@@ -92,6 +92,9 @@ public class RefreshTokenService {
     }
 
 
+
+//      Invalidate all refresh tokens for a user (logout from all devices) which will be used particulaly for admin endpionts
+
 //      Invalidate all refresh tokens for a user (logout from all devices) which will be used for admin endpionts
 
     public void invalidateAllForUser(String userId) {
@@ -128,8 +131,13 @@ public class RefreshTokenService {
 
     public String rotateRefreshToken(String oldRefreshToken) {
         String userId = validateAndGetUserId(oldRefreshToken);
-        invalidateRefreshToken(oldRefreshToken);
+
+
+        //  Generate new token BEFORE invalidating old one
         String newRefreshToken = generateAndStoreRefreshToken(userId);
+
+        //  Invalidate the old token which will remove it from user's set
+        invalidateRefreshToken(oldRefreshToken);
 
         logger.info("Rotated refresh token for user: {}, old: {}, new: {}",
                 userId, maskToken(oldRefreshToken), maskToken(newRefreshToken));
@@ -154,4 +162,28 @@ public class RefreshTokenService {
         }
         return token.substring(0, 4) + "..." + token.substring(token.length() - 4);
     }
+
+
+
+
+//      Verify that a refresh token belongs to the specified user which prevents users from invalidating other users' tokens
+
+    public boolean isRefreshTokenValidForUser(String refreshToken, String userId) {
+        String tokenKey = tokenUserKeyPrefix + refreshToken;
+        String actualUserId = redisTemplate.opsForValue().get(tokenKey);
+
+        boolean isValid = userId.equals(actualUserId);
+
+        if (!isValid) {
+            logger.warn("Refresh token ownership validation failed. Token: {}, Expected user: {}, Actual user: {}",
+                    maskToken(refreshToken), userId, actualUserId);
+        } else {
+            logger.debug("Refresh token ownership validated successfully for user: {}", userId);
+        }
+
+        return isValid;
+    }
+
+
+
 }
