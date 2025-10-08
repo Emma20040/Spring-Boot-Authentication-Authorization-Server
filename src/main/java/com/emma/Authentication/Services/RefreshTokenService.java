@@ -56,6 +56,7 @@ public class RefreshTokenService {
 
 
 //      Validate refresh token and return userId
+
     public String validateAndGetUserId(String refreshToken) {
         String tokenKey = tokenUserKeyPrefix + refreshToken;
         String userId = redisTemplate.opsForValue().get(tokenKey);
@@ -91,7 +92,11 @@ public class RefreshTokenService {
     }
 
 
+
 //      Invalidate all refresh tokens for a user (logout from all devices) which will be used particulaly for admin endpionts
+
+//      Invalidate all refresh tokens for a user (logout from all devices) which will be used for admin endpionts
+
     public void invalidateAllForUser(String userId) {
         String userKey = userRefreshKeyPrefix + userId;
         Set<String> tokens = redisTemplate.opsForSet().members(userKey);
@@ -127,6 +132,7 @@ public class RefreshTokenService {
     public String rotateRefreshToken(String oldRefreshToken) {
         String userId = validateAndGetUserId(oldRefreshToken);
 
+
         //  Generate new token BEFORE invalidating old one
         String newRefreshToken = generateAndStoreRefreshToken(userId);
 
@@ -159,6 +165,7 @@ public class RefreshTokenService {
 
 
 
+
 //      Verify that a refresh token belongs to the specified user which prevents users from invalidating other users' tokens
 
     public boolean isRefreshTokenValidForUser(String refreshToken, String userId) {
@@ -176,6 +183,7 @@ public class RefreshTokenService {
 
         return isValid;
     }
+
 
 
 }

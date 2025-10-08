@@ -69,6 +69,7 @@ public class AuthController {
     }
 
 
+
 // ----------- LOGOUT -----------
 // Logout - single device (current session only)
     @PostMapping("/logout")
@@ -97,6 +98,7 @@ public class AuthController {
         }
         return ResponseEntity.badRequest().body(Map.of("error", "Invalid authorization header"));
     }
+
 
 
 }

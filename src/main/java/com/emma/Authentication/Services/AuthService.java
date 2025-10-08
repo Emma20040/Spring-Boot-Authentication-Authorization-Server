@@ -35,7 +35,9 @@ public class AuthService {
     private final UserRepository userRepository;
     private final RefreshTokenService refreshTokenService;
     private final JwtActions jwtActions;
+
     private final JwtBlacklistService jwtBlacklistService;
+
 
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -46,15 +48,20 @@ public class AuthService {
 
     public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder,
                        EmailServices emailServices, RedisTemplate<String, Object> redisTemplate,
+
                        RefreshTokenService refreshTokenService, JwtActions jwtActions,
                        JwtBlacklistService jwtBlacklistService) {
+
+                       RefreshTokenService refreshTokenService, JwtActions jwtActions) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailServices = emailServices;
         this.redisTemplate = redisTemplate;
         this.refreshTokenService= refreshTokenService;
         this.jwtActions= jwtActions;
+
         this.jwtBlacklistService = jwtBlacklistService;
+
     }
 
 //    get user by username
@@ -330,5 +337,6 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid token");
         }
     }
+
 
 }
