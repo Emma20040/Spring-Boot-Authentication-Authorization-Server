@@ -19,6 +19,8 @@ public class AuthController {
         this.authService = authService;
     }
 
+//    ---------- SIGNUP ------------
+
     // Register endpoint
     @PostMapping("/register")
     public ResponseEntity<Map<String, String>> registerUser(@RequestBody @Valid SignupDto signupDto) {
@@ -41,6 +43,31 @@ public class AuthController {
         authService.resendVerification(resendVerificationDTO.email());
         return ResponseEntity.ok(Map.of("message", "Verification email resent successfully."));
     }
+
+
+    // Google Signup endpoint
+    @PostMapping("/google/signup")
+    public ResponseEntity<Map<String, String>> googleSignup(@RequestBody @Valid GoogleSignupRequest googleSignupRequest) {
+        GoogleSignupResponse response = authService.googleSignup(googleSignupRequest.email(), googleSignupRequest.googleId());
+
+        if (response.success()) {
+            // Successful signup with automatic login
+            return ResponseEntity.ok(Map.of(
+                    "message", response.message(),
+                    "jwtToken", response.jwtToken(),
+                    "refreshToken", response.refreshToken(),
+                    "userId", response.userId()
+            ));
+        } else {
+            // Failed signup
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", response.message(),
+                    "requiresLogin", String.valueOf(response.requiresLogin())
+            ));
+        }
+    }
+
+
 
 
     //    ----------- LOGIN  ---------
