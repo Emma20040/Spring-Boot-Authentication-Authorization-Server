@@ -21,13 +21,13 @@ public class UserModel {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name="username", nullable = false, updatable = false)
+    @Column(name="username", updatable = false)
     private String username;
 
     @Column(name="email", nullable = false, updatable= false)
     private String email;
 
-    @Column(name="password", nullable = false)
+    @Column(name="password")
     private String password;
 
     @Column(name="google_id")

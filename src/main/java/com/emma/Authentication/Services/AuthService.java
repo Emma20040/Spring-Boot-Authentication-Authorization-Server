@@ -1,6 +1,9 @@
 package com.emma.Authentication.Services;
 
+import com.emma.Authentication.DTOs.GoogleSignupResponse;
+import com.emma.Authentication.DTOs.GoogleUserInfo;
 import com.emma.Authentication.DTOs.LoginResponse;
+import com.emma.Authentication.DTOs.TokenValidationResult;
 import com.emma.Authentication.Repositories.UserRepository;
 import com.emma.Authentication.UserModel.UserModel;
 import com.emma.Authentication.Utils.JwtActions;
@@ -19,10 +22,17 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static com.emma.Authentication.enums.Roles.USER;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken.Payload;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.jackson2.JacksonFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,33 +62,37 @@ public class AuthService {
                        RefreshTokenService refreshTokenService, JwtActions jwtActions,
                        JwtBlacklistService jwtBlacklistService) {
 
-                       RefreshTokenService refreshTokenService, JwtActions jwtActions) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailServices = emailServices;
         this.redisTemplate = redisTemplate;
-        this.refreshTokenService= refreshTokenService;
-        this.jwtActions= jwtActions;
+        this.refreshTokenService = refreshTokenService;
+        this.jwtActions = jwtActions;
 
         this.jwtBlacklistService = jwtBlacklistService;
 
     }
 
-//    get user by username
+    //    get user by username
     private Optional<UserModel> findUserByUsername(String username) {
 
         return userRepository.findByUsername(username);
     }
 
-//    get user by email only
+    //    get user by email only
     private Optional<UserModel> findUserByEmail(String email) {
         return userRepository.findByEmail(email);
     }
 
-//    grt user either by username or email
-    private Optional<UserModel> findUserByEmailOrUsername(String emailOrUsername){
+    //    get user by googleId
+    private Optional<UserModel> findByGoogleId(String googleId) {
+        return userRepository.findByGoogleId(googleId);
+    }
+
+    //    grt user either by username or email
+    private Optional<UserModel> findUserByEmailOrUsername(String emailOrUsername) {
         Optional<UserModel> findByEmail = findUserByEmail((emailOrUsername));
-        if (findByEmail.isPresent()){
+        if (findByEmail.isPresent()) {
             return findByEmail;
         }
 
@@ -103,14 +117,13 @@ public class AuthService {
     }
 
 
-//    verify password during login
+    //    verify password during login
     private boolean verifyPassword(String rawPassword, String encodedPassword) {
         return passwordEncoder.matches(rawPassword, encodedPassword);
     }
 
 
-
-//    manual signup (register without using google)
+    //    manual signup (register without using google)
     public void manualSignup(String email, String username, String password) {
 //        check if another user already has that email
         if (findUserByEmail(email).isPresent()) {
@@ -189,7 +202,6 @@ public class AuthService {
     }
 
 
-
     // Resend verification token
     public void resendVerification(String email) {
         // Check if user already exists in database
@@ -238,8 +250,7 @@ public class AuthService {
     }
 
 
-
-//    manual Login
+    //    manual Login
     public LoginResponse manualLogin(String emailOrUsername, String password) {
         var user = findUserByEmailOrUsername(emailOrUsername)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -308,7 +319,7 @@ public class AuthService {
 
         } catch (Exception e) {
             logger.error("Error during single device logout", e);
-            if (e instanceof ResponseStatusException){
+            if (e instanceof ResponseStatusException) {
                 throw e;
             }
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid token");
@@ -339,4 +350,161 @@ public class AuthService {
     }
 
 
+    // ========== GOOGLE OAUTH2  ==========
+
+    // Google signup - extract only email and googleId
+    public GoogleSignupResponse googleSignup(String email, String googleId) {
+        // Mask sensitive data in logs
+        String maskedEmail = maskEmail(email);
+        logger.info("Processing Google signup for email: {}, googleId: [REDACTED]", maskedEmail);
+
+        // ======== Validate Google ID token ========
+        TokenValidationResult validationResult = validateGoogleToken(googleId, maskedEmail);
+        if (!validationResult.isValid()) {
+            return validationResult.getErrorResponse();
+        }
+
+        // Use the validated email and googleId from the token
+        String verifiedEmail = validationResult.email();
+        String verifiedGoogleId = validationResult.googleId();
+
+        // ======== Check if user already exists with this googleId ========
+        GoogleSignupResponse existingUserResponse = checkUserExistsWithGoogleId(verifiedGoogleId);
+        if (existingUserResponse != null) {
+            return existingUserResponse;
+        }
+
+        // ======== Check if user already exists with this email ========
+        Optional<UserModel> existingUserByEmail = findUserByEmail(verifiedEmail);
+        if (existingUserByEmail.isPresent()) {
+            logger.warn("Google signup attempted with existing email: {}", maskedEmail);
+            return GoogleSignupResponse.builder()
+                    .message("Account already exists with this email. Try logging in instead.")
+                    .success(false)
+                    .requiresLogin(true)
+                    .build();
+        }
+
+        // Create new user with only email and googleId
+        return createUserWithGoogle(verifiedEmail, verifiedGoogleId);
+    }
+
+    // Create user with only email and googleId and automatically login
+    private GoogleSignupResponse createUserWithGoogle(String email, String googleId) {
+        try {
+            UserModel newUser = new UserModel();
+            newUser.setEmail(email);
+            newUser.setGoogleId(googleId);
+            newUser.setEnable(true); // Google users are auto-verified
+            newUser.setRole(USER);   // Default role is USER
+            // Username and password are null for Google users
+
+            UserModel savedUser = userRepository.save(newUser);
+            logger.info("Successfully created new user via Google signup: {}", maskEmail(email));
+
+            // Generate JWT and refresh token for automatic login
+            String jwtToken = jwtActions.jwtCreate(savedUser.getId(), savedUser.getEmail(),
+                    savedUser.getUsername(), savedUser.getRole().toString());
+            String refreshToken = refreshTokenService.generateAndStoreRefreshToken(savedUser.getId().toString());
+
+            // Send welcome email
+            sendWelcomeEmail(email);
+
+            return GoogleSignupResponse.builder()
+                    .message("Google signup successful! Welcome to our platform.")
+                    .success(true)
+                    .userId(savedUser.getId().toString())
+                    .jwtToken(jwtToken)
+                    .refreshToken(refreshToken)
+                    .requiresLogin(false)
+                    .build();
+
+        } catch (Exception e) {
+            logger.error("Error creating user with Google signup for email: {}", maskEmail(email), e);
+            return GoogleSignupResponse.builder()
+                    .message("Failed to complete Google signup. Please try again.")
+                    .success(false)
+                    .requiresLogin(false)
+                    .build();
+        }
+    }
+
+
+    // Validate Google token
+    private TokenValidationResult validateGoogleToken(String googleId, String maskedEmail) {
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new JacksonFactory())
+                    .setAudience(Collections.singletonList(googleClientId))
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(googleId);
+            if (idToken == null) {
+                logger.warn("Invalid Google ID token for email: {}", maskedEmail);
+                return TokenValidationResult.invalid("Invalid Google authentication token.");
+            }
+
+            Payload payload = idToken.getPayload();
+            String verifiedEmail = (String) payload.get("email");
+            String verifiedGoogleId = payload.getSubject(); // Securely extracted Google user ID
+
+            return TokenValidationResult.valid(verifiedEmail, verifiedGoogleId);
+
+        } catch (Exception e) {
+            logger.error("Google token verification failed for email: {}", maskedEmail, e);
+            return TokenValidationResult.invalid("Failed to verify Google token. Please try again.");
+        }
+    }
+
+    // Check if user exists with googleId
+    private GoogleSignupResponse checkUserExistsWithGoogleId(String googleId) {
+        Optional<UserModel> existingUserByGoogleId = findByGoogleId(googleId);
+        if (existingUserByGoogleId.isPresent()) {
+            logger.warn("Google signup attempted with existing googleId: {}", googleId);
+            return GoogleSignupResponse.builder()
+                    .message("User already exists with this Google account. Please login.")
+                    .success(false)
+                    .requiresLogin(true)
+                    .build();
+        }
+        return null;
+    }
+
+
+
+
+    // Send welcome email for Google users
+    private void sendWelcomeEmail(String email) {
+        try {
+            String subject = "Welcome to Our Platform!";
+            String content = "Hello,\n\n" +
+                    "Welcome to our platform! Your account has been successfully created " +
+                    "using Google authentication.\n\n" +
+                    "You can now login to your account using Google Sign-In.\n\n" +
+                    "Best regards,\nThe Team";
+
+            emailServices.sendEmail(email, subject, content);
+            logger.info("Welcome email sent to: {}", maskEmail(email));
+
+        } catch (MessagingException e) {
+            logger.error("Failed to send welcome email to: {}", maskEmail(email), e);
+
+        }
+    }
+
+    // Extract Google user info from OAuth2 attributes
+    public GoogleUserInfo extractGoogleUserInfo(Map<String, Object> attributes) {
+        return new GoogleUserInfo(
+                (String) attributes.get("email"),
+                (String) attributes.get("sub")
+        );
+    }
+
+    // Helper method to mask email in logs
+    private String maskEmail(String email) {
+        return (email != null && email.contains("@")) ? email.split("@")[0] + "@***" : "unknown";
+    }
+
 }
+
+
+
