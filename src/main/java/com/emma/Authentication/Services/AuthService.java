@@ -62,12 +62,17 @@ public class AuthService {
                        RefreshTokenService refreshTokenService, JwtActions jwtActions,
                        JwtBlacklistService jwtBlacklistService) {
 
+
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailServices = emailServices;
         this.redisTemplate = redisTemplate;
-        this.refreshTokenService = refreshTokenService;
-        this.jwtActions = jwtActions;
+
+        
+
+        this.refreshTokenService= refreshTokenService;
+        this.jwtActions= jwtActions;
+
 
         this.jwtBlacklistService = jwtBlacklistService;
 
@@ -503,6 +508,7 @@ public class AuthService {
     private String maskEmail(String email) {
         return (email != null && email.contains("@")) ? email.split("@")[0] + "@***" : "unknown";
     }
+
 
 }
 
