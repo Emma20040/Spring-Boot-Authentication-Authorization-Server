@@ -78,6 +78,7 @@ This document outlines the design and functionality of the User Authentication a
 - GET /api/auth/reset-password?token=<reset_token>: Initiates reset (optional form)
 - POST /api/auth/complete-reset-password: {reset_token, password}; completes reset, issues JWT + refresh token
 - POST /api/auth/login: {email/username, password}; manual login, issues JWT + refresh token
+- POST /api/auth/setUsernameAndPassword: {username, password}; this is for user that signed up with google
 
 ### Protected (Require JWT)
 - POST /api/auth/link-google: {link_token, password}; links Google account, issues JWT + refresh token
@@ -152,6 +153,7 @@ This document outlines the design and functionality of the User Authentication a
 10. Invalid Refresh Token: Return “Invalid refresh token.”
 11. Expired Refresh Token: Return “Session expired, re-login.”
 12. Logout with Invalid JWT: Return HTTP 401.
+13. Users that registered with google and want to login manually or users that registered manually but want to login with google
 
 ## Deployment and Monitoring
 - Deployment: Docker, cloud (AWS).
@@ -164,3 +166,6 @@ This document outlines the design and functionality of the User Authentication a
 
 ## Contact
 For updates or issues, contact the development team or refer to project sources.
+**
+
+**** TODO: VERY IMPORTANT SECURITY CHECK ******: WHAT IS SOMEONE SINGUPED WITH GOOGLE(googleId and email) BUT WANT TO LOGIN(MANUALLY) THE PASSWORD IS NULL. SO HE TRIES TO LOGIN INTO SOMEONE ACCOUNT(HE KNOWS THE EMAIL) SO HE PUTS THE EMAIL AND LEAVE THE PASSWORD FIELD AS BLANK? DOES THIS MEANS HE WILL HAVE ACCESS TO THIS PERSON'S ACCOUNT?
