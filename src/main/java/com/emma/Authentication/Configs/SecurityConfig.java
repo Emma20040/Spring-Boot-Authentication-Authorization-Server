@@ -45,7 +45,7 @@ public class SecurityConfig {
 
 
                         .anyRequest().authenticated())
-                .oauth2Login(withDefaults())
+//                .oauth2Login(withDefaults())
                 .oauth2ResourceServer(config -> config.jwt(jwt -> jwt.decoder(jwtConfig.jwtDecoder())));
 
         return http.build();

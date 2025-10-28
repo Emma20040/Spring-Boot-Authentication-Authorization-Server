@@ -1,12 +1,6 @@
 package com.emma.Authentication.Services;
 
-import com.emma.Authentication.DTOs.GoogleSignupResponse;
-import com.emma.Authentication.DTOs.GoogleUserInfo;
-import com.emma.Authentication.DTOs.LoginResponse;
-import com.emma.Authentication.DTOs.TokenValidationResult;
-import com.emma.Authentication.Repositories.UserRepository;
-import com.emma.Authentication.UserModel.UserModel;
-import com.emma.Authentication.Utils.JwtActions;
+
 import jakarta.mail.MessagingException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -36,6 +30,14 @@ import com.google.api.client.json.jackson2.JacksonFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.emma.Authentication.DTOs.GoogleSignupResponse;
+import com.emma.Authentication.DTOs.GoogleUserInfo;
+import com.emma.Authentication.DTOs.LoginResponse;
+import com.emma.Authentication.DTOs.TokenValidationResult;
+import com.emma.Authentication.Repositories.UserRepository;
+import com.emma.Authentication.UserModel.UserModel;
+import com.emma.Authentication.Utils.JwtActions;
+
 
 @Service
 public class AuthService {
@@ -55,6 +57,8 @@ public class AuthService {
     private long verificationTokenExpiration;
 
     private final String PRE_VERIFICATION_USER_KEY = "pre_verification_user:";
+    @Value("${google.client.id}")
+    private String googleClientId;
 
     public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder,
                        EmailServices emailServices, RedisTemplate<String, Object> redisTemplate,
@@ -257,9 +261,27 @@ public class AuthService {
 
     //    manual Login
     public LoginResponse manualLogin(String emailOrUsername, String password) {
+//               security check: prevent users from submitting empyt password field
+        if(password ==null || password.trim().isEmpty()){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "password is null ");
+        }
+
         var user = findUserByEmailOrUsername(emailOrUsername)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Invalid login credentials"));
+
+//        SECURITY CHECK: checks if user is registered with google (and has no password) prevent server from processing null password fields
+        if (user.getPassword() == null) {
+            String message = "This account doesn't support password login. ";
+
+            if (user.getGoogleId() != null) {
+                message += "Please sign in with Google.";
+            } else {
+                message += "Please use your original sign-in method.";
+            }
+
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+        }
 
         if (!user.isEnable()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email not verified verify email and try again");
