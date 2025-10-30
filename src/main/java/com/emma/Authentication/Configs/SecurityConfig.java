@@ -38,6 +38,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "api/auth/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "api/auth/google/signup").permitAll()
+                        .requestMatchers(HttpMethod.POST, "api/auth/google/login").permitAll()
 
 
                         .requestMatchers(HttpMethod.POST, "api/auth/logout").authenticated()

@@ -1,6 +1,7 @@
 package com.emma.Authentication.Services;
 
 
+import com.emma.Authentication.DTOs.*;
 import jakarta.mail.MessagingException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -30,10 +31,6 @@ import com.google.api.client.json.jackson2.JacksonFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.emma.Authentication.DTOs.GoogleSignupResponse;
-import com.emma.Authentication.DTOs.GoogleUserInfo;
-import com.emma.Authentication.DTOs.LoginResponse;
-import com.emma.Authentication.DTOs.TokenValidationResult;
 import com.emma.Authentication.Repositories.UserRepository;
 import com.emma.Authentication.UserModel.UserModel;
 import com.emma.Authentication.Utils.JwtActions;
@@ -377,7 +374,7 @@ public class AuthService {
     }
 
 
-    // ========== GOOGLE OAUTH2  ==========
+    // --------- GOOGLE OAUTH2  -----------
 
     // Google signup - extract only email and googleId
     public GoogleSignupResponse googleSignup(String email, String googleId) {
@@ -385,7 +382,7 @@ public class AuthService {
         String maskedEmail = maskEmail(email);
         logger.info("Processing Google signup for email: {}, googleId: [REDACTED]", maskedEmail);
 
-        // ======== Validate Google ID token ========
+        //  Validate Google ID token
         TokenValidationResult validationResult = validateGoogleToken(googleId, maskedEmail);
         if (!validationResult.isValid()) {
             return validationResult.getErrorResponse();
@@ -395,13 +392,13 @@ public class AuthService {
         String verifiedEmail = validationResult.email();
         String verifiedGoogleId = validationResult.googleId();
 
-        // ======== Check if user already exists with this googleId ========
+        //  Check if user already exists with this googleId
         GoogleSignupResponse existingUserResponse = checkUserExistsWithGoogleId(verifiedGoogleId);
         if (existingUserResponse != null) {
             return existingUserResponse;
         }
 
-        // ======== Check if user already exists with this email ========
+        // Check if user already exists with this email
         Optional<UserModel> existingUserByEmail = findUserByEmail(verifiedEmail);
         if (existingUserByEmail.isPresent()) {
             logger.warn("Google signup attempted with existing email: {}", maskedEmail);
@@ -415,6 +412,7 @@ public class AuthService {
         // Create new user with only email and googleId
         return createUserWithGoogle(verifiedEmail, verifiedGoogleId);
     }
+
 
     // Create user with only email and googleId and automatically login
     private GoogleSignupResponse createUserWithGoogle(String email, String googleId) {
@@ -457,6 +455,41 @@ public class AuthService {
     }
 
 
+//    method for existing users with googleId to login
+    public GoogleLoginResponse googleLogin(String email, String googleId){
+//        masked email
+        String maskedEmail = maskEmail(email);
+        logger.info("Processing Google login for email: {}, googleId: [REDACTED]", maskedEmail);
+
+//        verify googleId token
+        TokenValidationResult validationResult = validateGoogleToken(googleId, maskedEmail);
+        if(!validationResult.isValid()){
+            return  GoogleLoginResponse.builder()
+                    .message(validationResult.getErrorResponse().message())
+                    .success(false)
+                    .build();
+        }
+
+//        get validated email and googleId from token
+        String verifiedEmail = validationResult.email();
+        String verifiedGoogleId = validationResult.googleId();
+
+//        find user by googleId
+        Optional<UserModel> existingUserByGoogleId = findByGoogleId(verifiedGoogleId);
+        if (existingUserByGoogleId.isPresent()) {
+            UserModel user = existingUserByGoogleId.get();
+            return generateGoogleLoginResponse(user, "Google login successful!");
+        }
+
+//        if no goggleId is found
+        logger.warn("Google login attempted for non-Google user: {}", maskedEmail);
+        return GoogleLoginResponse.builder()
+                .message("No Google account found. Please sign up with Google first or use manual login.")
+                .success(false)
+                .build();
+    }
+
+
     // Validate Google token
     private TokenValidationResult validateGoogleToken(String googleId, String maskedEmail) {
         try {
@@ -481,6 +514,7 @@ public class AuthService {
             return TokenValidationResult.invalid("Failed to verify Google token. Please try again.");
         }
     }
+
 
     // Check if user exists with googleId
     private GoogleSignupResponse checkUserExistsWithGoogleId(String googleId) {
@@ -518,7 +552,7 @@ public class AuthService {
         }
     }
 
-    // Extract Google user info from OAuth2 attributes
+    //helper method Extract Google user info from OAuth2 attributes
     public GoogleUserInfo extractGoogleUserInfo(Map<String, Object> attributes) {
         return new GoogleUserInfo(
                 (String) attributes.get("email"),
@@ -526,10 +560,40 @@ public class AuthService {
         );
     }
 
+
     // Helper method to mask email in logs
     private String maskEmail(String email) {
         return (email != null && email.contains("@")) ? email.split("@")[0] + "@***" : "unknown";
     }
+
+
+    // Helper method to generate login response for user that logn with google
+    private GoogleLoginResponse generateGoogleLoginResponse(UserModel user, String message){
+        try{
+//            generate refresh and jwt token
+            String jwtToken =jwtActions.jwtCreate(user.getId(), user.getEmail(), user.getUsername(), user.getRole().toString());
+            String refreshToken = refreshTokenService.generateAndStoreRefreshToken(user.getId().toString());
+
+            logger.info("Successful Google login for user: {}", maskEmail(user.getEmail()));
+
+            return GoogleLoginResponse.builder()
+                    .message(message)
+                    .success(true)
+                    .userId(user.getId().toString())
+                    .jwtToken(jwtToken)
+                    .refreshToken(refreshToken)
+                    .build();
+
+        } catch (Exception e){
+            logger.info("Error generating tokens for Google login: {}", maskEmail(user.getEmail()));
+
+            return GoogleLoginResponse.builder()
+                    .message("Login successful but failed to generate tokens. Please try again.")
+                    .success(false)
+                    .build();
+        }
+    }
+
 
 
 }

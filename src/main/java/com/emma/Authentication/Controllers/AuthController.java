@@ -71,6 +71,7 @@ public class AuthController {
 
 
     //    ----------- LOGIN  ---------
+//    manual login
     @PostMapping("/login")
     public ResponseEntity<Map<String, String>> loginUser(@RequestBody @Valid LoginDto loginDTO) {
         LoginResponse response = authService.manualLogin(loginDTO.emailOrUsername(), loginDTO.password());
@@ -80,6 +81,28 @@ public class AuthController {
                 "refreshToken", response.refreshToken(),
                 "message", response.message()
         ));
+    }
+
+
+//    login with google
+    @PostMapping("/google/login")
+    public ResponseEntity<Map<String, String>> googleLogin(@RequestBody @Valid GoogleLoginRequest googleLoginRequest){
+        GoogleLoginResponse response = authService.googleLogin(googleLoginRequest.email(), googleLoginRequest.googleId());
+
+        if (response.success()){
+            return  ResponseEntity.ok(Map.of(
+                    "message", response.message(),
+                    "jwtToken", response.jwtToken(),
+                    "refreshToken", response.refreshToken(),
+                    "userId", response.userId()
+            ));
+
+        } else {
+            // Failed login
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", response.message()
+            ));
+        }
     }
 
 
