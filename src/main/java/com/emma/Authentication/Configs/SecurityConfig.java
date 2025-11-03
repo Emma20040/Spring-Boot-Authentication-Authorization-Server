@@ -43,6 +43,9 @@ public class SecurityConfig {
 
                         .requestMatchers(HttpMethod.POST, "api/auth/logout").authenticated()
                         .requestMatchers(HttpMethod.POST, "api/auth/logout-all").authenticated()
+                        .requestMatchers(HttpMethod.GET, "api/auth/auth-methods").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/connect-google").authenticated()
+                        .requestMatchers(HttpMethod.POST, "api/auth/enable-password").authenticated()
 
 
                         .anyRequest().authenticated())

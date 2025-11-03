@@ -169,3 +169,12 @@ For updates or issues, contact the development team or refer to project sources.
 **
 
 **** TODO: VERY IMPORTANT SECURITY CHECK ******: WHAT IS SOMEONE SINGUPED WITH GOOGLE(googleId and email) BUT WANT TO LOGIN(MANUALLY) THE PASSWORD IS NULL. SO HE TRIES TO LOGIN INTO SOMEONE ACCOUNT(HE KNOWS THE EMAIL) SO HE PUTS THE EMAIL AND LEAVE THE PASSWORD FIELD AS BLANK? DOES THIS MEANS HE WILL HAVE ACCESS TO THIS PERSON'S ACCOUNT?
+
+*****TODO:  SECURITY: IN THE RESET PASSWORD I MUST MAKE SURE THAT USER THAT SIGNUP WITH GOOGLE CAN'T RESET THEIR PASSWORDS UNTIL THEY HAVE LINKED THE ACCOUNTS 
+
+how does login with google works since it uses no password just the user email? does it means that if i know some one email i login into their account?
+
+this code you have given links the accounts during login but isn't that less secure and it also works well if i have only two authentication methods, what if i added 5 other authentication? that means i have to refactor the code each time which makes the code not reusable. sinnce most big companies allow linking accounts only when the user is login lets allow the system to link account only for login users.
+
+
+
