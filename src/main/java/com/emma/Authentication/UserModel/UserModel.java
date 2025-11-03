@@ -45,6 +45,9 @@ public class UserModel {
     @Column(name="updated_at", columnDefinition = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP", nullable = true, updatable = true)
     private LocalDateTime updatedAt;
 
+//    when account was linked
+    @Column(name="linked_at")
+    private LocalDateTime linkedAt;
 
     @PrePersist
     protected void onCreate() {
@@ -62,6 +65,23 @@ public class UserModel {
 
         return enable;
     }
+
+    public boolean hasPassword() {
+        return this.password != null && !this.password.trim().isEmpty();
+    }
+
+    public boolean hasGoogleAuth() {
+        return this.googleId != null && !this.googleId.trim().isEmpty();
+    }
+
+    public int getAuthMethodCount() {
+        int count = 0;
+        if (hasPassword()) count++;
+        if (hasGoogleAuth()) count++;
+        return count;
+    }
+
+
 
 
 }

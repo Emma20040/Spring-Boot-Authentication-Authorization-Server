@@ -3,12 +3,11 @@ package com.emma.Authentication.Services;
 
 import com.emma.Authentication.DTOs.*;
 import jakarta.mail.MessagingException;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.emma.Authentication.Services.AccountLinkingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -28,8 +27,6 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken.Payload;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.jackson2.JacksonFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.emma.Authentication.Repositories.UserRepository;
 import com.emma.Authentication.UserModel.UserModel;
@@ -44,9 +41,8 @@ public class AuthService {
     private final UserRepository userRepository;
     private final RefreshTokenService refreshTokenService;
     private final JwtActions jwtActions;
-
     private final JwtBlacklistService jwtBlacklistService;
-
+    private final AccountLinkingService accountLinkingService;
 
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -61,21 +57,18 @@ public class AuthService {
                        EmailServices emailServices, RedisTemplate<String, Object> redisTemplate,
 
                        RefreshTokenService refreshTokenService, JwtActions jwtActions,
-                       JwtBlacklistService jwtBlacklistService) {
+                       JwtBlacklistService jwtBlacklistService,
+                      @Lazy AccountLinkingService accountLinkingService) {
 
 
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailServices = emailServices;
         this.redisTemplate = redisTemplate;
-
-        
-
         this.refreshTokenService= refreshTokenService;
         this.jwtActions= jwtActions;
-
-
         this.jwtBlacklistService = jwtBlacklistService;
+        this.accountLinkingService = accountLinkingService;
 
     }
 
@@ -148,6 +141,10 @@ public class AuthService {
             redisTemplate.delete(PRE_VERIFICATION_USER_KEY + existingToken);
         }
 
+//        makes sure users can't submit blank spaces for password since the db schema allows null for password
+        if(password ==null || password.trim().isEmpty()){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "password can not be null ");
+        }
 
 //        Hash the user password
         var hashedPassword = passwordEncoder.encode(password);
@@ -272,7 +269,7 @@ public class AuthService {
             String message = "This account doesn't support password login. ";
 
             if (user.getGoogleId() != null) {
-                message += "Please sign in with Google.";
+                message += "Please sign in with .";
             } else {
                 message += "Please use your original sign-in method.";
             }
@@ -421,7 +418,7 @@ public class AuthService {
             newUser.setEmail(email);
             newUser.setGoogleId(googleId);
             newUser.setEnable(true); // Google users are auto-verified
-            newUser.setRole(USER);   // Default role is USER
+            newUser.setRole(USER);
             // Username and password are null for Google users
 
             UserModel savedUser = userRepository.save(newUser);
@@ -490,8 +487,30 @@ public class AuthService {
     }
 
 
+    // ----------- ACCOUNT LINKING METHODS ----------
+
+
+//     Connect Google account to authenticated user
+    public LinkProviderResponse connectGoogleAccount(UUID userId, LinkGoogleAccountRequest request) {
+        return accountLinkingService.connectGoogleAccount(userId, request);
+    }
+
+
+//      Enable password authentication for OAuth-only user
+    public LinkProviderResponse enablePasswordAuthentication(UUID userId, AddPasswordRequest request) {
+        return accountLinkingService.enablePasswordAuthentication(userId, request);
+    }
+
+
+//      Get user's current authentication methods
+    public AuthMethodsResponse getUserAuthenticationMethods(UUID userId) {
+        return accountLinkingService.getUserAuthenticationMethods(userId);
+    }
+
+//-----end of account linking ------
+
     // Validate Google token
-    private TokenValidationResult validateGoogleToken(String googleId, String maskedEmail) {
+    public TokenValidationResult validateGoogleToken(String googleId, String maskedEmail) {
         try {
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new JacksonFactory())
                     .setAudience(Collections.singletonList(googleClientId))
@@ -562,7 +581,7 @@ public class AuthService {
 
 
     // Helper method to mask email in logs
-    private String maskEmail(String email) {
+    public String maskEmail(String email) {
         return (email != null && email.contains("@")) ? email.split("@")[0] + "@***" : "unknown";
     }
 

@@ -4,16 +4,23 @@ import com.emma.Authentication.DTOs.*;
 import com.emma.Authentication.Services.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
+import java.util.UUID;
+import org.slf4j.Logger;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
     private final AuthService authService;
+    private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
 
     public AuthController(AuthService authService) {
         this.authService = authService;
@@ -149,6 +156,65 @@ public class AuthController {
         return ResponseEntity.badRequest().body(Map.of("error", "Invalid authorization header"));
     }
 
+//    ------- link accounts ---
+
+    @GetMapping("/auth-methods")
+    public ResponseEntity<?> getUserAuthenticationMethods(Authentication authentication) {
+        try {
+            UUID userId = extractUserIdFromAuthentication(authentication);
+            AuthMethodsResponse response = authService.getUserAuthenticationMethods(userId);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Failed to get authentication methods for user", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to get authentication methods"));
+        }
+    }
+
+    @PostMapping("/connect-google")
+    public ResponseEntity<?> connectGoogleAccount(@RequestBody LinkGoogleAccountRequest request,
+                                                  Authentication authentication) {
+        try {
+            UUID userId = extractUserIdFromAuthentication(authentication);
+            LinkProviderResponse response = authService.connectGoogleAccount(userId, request);
+            return ResponseEntity.ok(response);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Failed to connect Google account for user", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to connect Google account");
+        }
+    }
+
+    @PostMapping("/enable-password")
+    public ResponseEntity<?> enablePasswordAuthentication(@RequestBody AddPasswordRequest request,
+                                                          Authentication authentication) {
+        try {
+            UUID userId = extractUserIdFromAuthentication(authentication);
+            LinkProviderResponse response = authService.enablePasswordAuthentication(userId, request);
+            return ResponseEntity.ok(response);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Failed to enable password authentication for user", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to enable password authentication");
+        }
+    }
+
+    // Helper method - adjust based on your JWT structure
+    private UUID extractUserIdFromAuthentication(Authentication authentication) {
+        try {
+            // Option 1: If JWT subject is user ID (recommended)
+            String userIdString = authentication.getName();
+            return UUID.fromString(userIdString);
+
+        } catch (Exception e) {
+            logger.error("Failed to extract user ID from authentication", e);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid authentication");
+        }
+    }
 
 
 }
