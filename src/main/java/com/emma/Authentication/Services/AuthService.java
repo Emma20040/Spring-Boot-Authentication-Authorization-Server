@@ -16,10 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 import static com.emma.Authentication.enums.Roles.USER;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
@@ -43,6 +40,10 @@ public class AuthService {
     private final JwtActions jwtActions;
     private final JwtBlacklistService jwtBlacklistService;
     private final AccountLinkingService accountLinkingService;
+
+    private final String PASSWORD_RESET_TOKEN_KEY = "password_reset:";
+    private final long PASSWORD_RESET_TOKEN_EXPIRATION = 1800;
+
 
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -509,6 +510,89 @@ public class AuthService {
 
 //-----end of account linking ------
 
+
+
+//    ------------ RESET PASSWORD ------------
+//    Initiate password reset process - generate OTP and send email
+    public void initiatePasswordReset(String email) {
+        var user = findUserByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email"));
+
+        // Generate 6-digit OTP
+        String otp = generateSixDigitOtp();
+
+        // Store OTP in Redis with 30-minute expiration
+        String redisKey = PASSWORD_RESET_TOKEN_KEY + otp;
+        Map<String, String> resetData = Map.of(
+                "email", user.getEmail(),
+                "userId", user.getId().toString(),
+                "createdAt", Instant.now().toString()
+        );
+
+        redisTemplate.opsForValue().set(redisKey, resetData, Duration.ofSeconds(PASSWORD_RESET_TOKEN_EXPIRATION));
+
+        // Send OTP via email
+        sendPasswordResetOtpEmail(user.getEmail(), otp);
+    }
+
+
+//      Verify OTP and reset password
+
+    public void verifyOtpAndResetPassword(VerifyOtpAndResetPasswordRequest request) {
+        String redisKey = PASSWORD_RESET_TOKEN_KEY + request.otp();
+        Map<String, String> resetData = (Map<String, String>) redisTemplate.opsForValue().get(redisKey);
+
+        if (resetData == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired OTP");
+        }
+
+        String email = resetData.get("email");
+        UUID userId = UUID.fromString(resetData.get("userId"));
+
+        var user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not found"));
+
+        // Validate new password
+        if (request.newPassword() == null || request.newPassword().trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password cannot be empty");
+        }
+
+        // Update password
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+
+        // Clean up Redis token
+        redisTemplate.delete(redisKey);
+
+        logger.info("Password successfully reset for user: {}", maskEmail(email));
+    }
+
+
+
+    //      Send password reset OTP email
+    private void sendPasswordResetOtpEmail(String email, String otp) {
+        try {
+            String subject = "Password Reset OTP";
+            String content = "Hello,\n\n" +
+                    "You requested to reset your password. Use the following OTP to proceed:\n\n" +
+                    "OTP: " + otp + "\n\n" +
+                    "This OTP will expire in 30 minutes.\n\n" +
+                    "If you didn't request this, please ignore this email.\n\n" +
+                    "Best regards,\nThe Team";
+
+            emailServices.sendEmail(email, subject, content);
+            logger.info("Password reset OTP sent to: {}", maskEmail(email));
+
+        } catch (MessagingException e) {
+            logger.error("Failed to send password reset OTP to: {}", maskEmail(email), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to send password reset email. Please try again.");
+        }
+    }
+
+
+//    -------------- HELPER METHODS ------------
+
     // Validate Google token
     public TokenValidationResult validateGoogleToken(String googleId, String maskedEmail) {
         try {
@@ -548,7 +632,6 @@ public class AuthService {
         }
         return null;
     }
-
 
 
 
@@ -612,6 +695,58 @@ public class AuthService {
                     .build();
         }
     }
+
+
+
+//      Generate 6-digit OTP
+    private String generateSixDigitOtp() {
+        Random random = new Random();
+        int number = random.nextInt(1000000);
+        return String.format("%06d", number);
+    }
+
+
+//     Resend password reset OTP
+    public void resendPasswordResetOtp(ResendOtpRequest request) {
+        var user = findUserByEmail(request.email())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email"));
+
+        // Check if there's an existing OTP and delete it
+        String existingOtp = findExistingPasswordResetOtp(request.email());
+        if (existingOtp != null) {
+            redisTemplate.delete(PASSWORD_RESET_TOKEN_KEY + existingOtp);
+        }
+
+        // Generate new OTP using the initiate method
+        initiatePasswordReset(new InitiatePasswordResetRequest(request.email()));
+    }
+
+
+
+    //     Find existing password reset OTP for email
+    private String findExistingPasswordResetOtp(String email) {
+        String pattern = PASSWORD_RESET_TOKEN_KEY + "*";
+        var keys = redisTemplate.keys(pattern);
+
+        if (keys != null) {
+            for (String key : keys) {
+                Map<String, String> resetData = (Map<String, String>) redisTemplate.opsForValue().get(key);
+                if (resetData != null && email.equals(resetData.get("email"))) {
+                    return key.substring(PASSWORD_RESET_TOKEN_KEY.length());
+                }
+            }
+        }
+        return null;
+    }
+
+
+//      Validate OTP without resetting password (for frontend verification)
+    public ValidateOtpResponse validatePasswordResetOtp(String otp) {
+        String redisKey = PASSWORD_RESET_TOKEN_KEY + otp;
+        Map<String, String> resetData = (Map<String, String>) redisTemplate.opsForValue().get(redisKey);
+        return new ValidateOtpResponse(resetData != null);
+    }
+
 
 
 

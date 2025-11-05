@@ -39,7 +39,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "api/auth/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "api/auth/google/signup").permitAll()
                         .requestMatchers(HttpMethod.POST, "api/auth/google/login").permitAll()
-
+                        .requestMatchers(HttpMethod.POST, "api/auth/password-reset/initiate").permitAll()
+                        .requestMatchers(HttpMethod.POST, "api/auth/password-reset/verify").permitAll()
+                        .requestMatchers(HttpMethod.POST, "api/auth/password-reset/resend").permitAll()
+                        .requestMatchers(HttpMethod.POST, "api/auth//password-reset/validate-otp/**").permitAll()
 
                         .requestMatchers(HttpMethod.POST, "api/auth/logout").authenticated()
                         .requestMatchers(HttpMethod.POST, "api/auth/logout-all").authenticated()
