@@ -4,6 +4,8 @@ import com.emma.Authentication.DTOs.*;
 import com.emma.Authentication.Services.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -253,6 +255,7 @@ public class AuthController {
         }
     }
 
+//for frontend to check validation status
     @GetMapping("/password-reset/validate-otp/{otp}")
     public ResponseEntity<ValidateOtpResponse> validatePasswordResetOtp(@PathVariable String otp) {
         try {
@@ -261,6 +264,21 @@ public class AuthController {
         } catch (Exception e) {
             logger.error("Failed to validate OTP", e);
             return ResponseEntity.ok(new ValidateOtpResponse(false));
+        }
+    }
+
+//    check if user can change password
+    @GetMapping("/password-reset/check-eligibility")
+    public ResponseEntity<PasswordResetEligibilityResponse> checkPasswordResetEligibility(
+            @RequestBody PasswordResetEligibiltyRequest  passwordResetEligibiltyRequest) {
+        try {
+            PasswordResetEligibilityResponse response = authService.checkPasswordResetEligibility(passwordResetEligibiltyRequest.email());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Failed to check password reset eligibility", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new PasswordResetEligibilityResponse(false,
+                            "Failed to check eligibility", false, false));
         }
     }
 

@@ -514,40 +514,49 @@ public class AuthService {
 
 //    ------------ RESET PASSWORD ------------
 //    Initiate password reset process - generate OTP and send email
-    public void initiatePasswordReset(String email) {
-        var user = findUserByEmail(email)
+    public void initiatePasswordReset(InitiatePasswordResetRequest request) {
+        PasswordResetEligibilityResponse eligibility = checkPasswordResetEligibility(request.email());
+
+        if (!eligibility.eligible()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, eligibility.message());
+        }
+
+        var user = findUserByEmail(request.email())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email"));
 
         // Generate 6-digit OTP
         String otp = generateSixDigitOtp();
 
-        // Store OTP in Redis with 30-minute expiration
         String redisKey = PASSWORD_RESET_TOKEN_KEY + otp;
-        Map<String, String> resetData = Map.of(
-                "email", user.getEmail(),
-                "userId", user.getId().toString(),
-                "createdAt", Instant.now().toString()
-        );
+
+        String resetData = user.getEmail() + "|" + user.getId().toString();
 
         redisTemplate.opsForValue().set(redisKey, resetData, Duration.ofSeconds(PASSWORD_RESET_TOKEN_EXPIRATION));
 
         // Send OTP via email
         sendPasswordResetOtpEmail(user.getEmail(), otp);
-    }
 
+        logger.info("Password reset OTP generated for user: {} - OTP: {}", maskEmail(user.getEmail()), otp);
+    }
 
 //      Verify OTP and reset password
 
     public void verifyOtpAndResetPassword(VerifyOtpAndResetPasswordRequest request) {
         String redisKey = PASSWORD_RESET_TOKEN_KEY + request.otp();
-        Map<String, String> resetData = (Map<String, String>) redisTemplate.opsForValue().get(redisKey);
+        String resetData = (String) redisTemplate.opsForValue().get(redisKey);
 
         if (resetData == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired OTP");
         }
 
-        String email = resetData.get("email");
-        UUID userId = UUID.fromString(resetData.get("userId"));
+        // Parse the string data (format: email|userId)
+        String[] parts = resetData.split("\\|");
+        if (parts.length < 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid OTP data");
+        }
+
+        String email = parts[0];
+        UUID userId = UUID.fromString(parts[1]);
 
         var user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not found"));
@@ -555,6 +564,10 @@ public class AuthService {
         // Validate new password
         if (request.newPassword() == null || request.newPassword().trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password cannot be empty");
+        }
+
+        if (request.newPassword().length() < 6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password must be at least 6 characters");
         }
 
         // Update password
@@ -566,7 +579,6 @@ public class AuthService {
 
         logger.info("Password successfully reset for user: {}", maskEmail(email));
     }
-
 
 
     //      Send password reset OTP email
@@ -711,13 +723,19 @@ public class AuthService {
         var user = findUserByEmail(request.email())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email"));
 
+        // Check eligibility again
+        PasswordResetEligibilityResponse eligibility = checkPasswordResetEligibility(request.email());
+        if (!eligibility.eligible()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, eligibility.message());
+        }
+
         // Check if there's an existing OTP and delete it
         String existingOtp = findExistingPasswordResetOtp(request.email());
         if (existingOtp != null) {
             redisTemplate.delete(PASSWORD_RESET_TOKEN_KEY + existingOtp);
         }
 
-        // Generate new OTP using the initiate method
+        // Generate new OTP
         initiatePasswordReset(new InitiatePasswordResetRequest(request.email()));
     }
 
@@ -730,8 +748,8 @@ public class AuthService {
 
         if (keys != null) {
             for (String key : keys) {
-                Map<String, String> resetData = (Map<String, String>) redisTemplate.opsForValue().get(key);
-                if (resetData != null && email.equals(resetData.get("email"))) {
+                String resetData = (String) redisTemplate.opsForValue().get(key);
+                if (resetData != null && resetData.startsWith(email + "|")) {
                     return key.substring(PASSWORD_RESET_TOKEN_KEY.length());
                 }
             }
@@ -743,10 +761,42 @@ public class AuthService {
 //      Validate OTP without resetting password (for frontend verification)
     public ValidateOtpResponse validatePasswordResetOtp(String otp) {
         String redisKey = PASSWORD_RESET_TOKEN_KEY + otp;
-        Map<String, String> resetData = (Map<String, String>) redisTemplate.opsForValue().get(redisKey);
+
+        String resetData = (String) redisTemplate.opsForValue().get(redisKey);
         return new ValidateOtpResponse(resetData != null);
     }
 
+
+//    Check if user is eligible for password reset
+public PasswordResetEligibilityResponse checkPasswordResetEligibility(String email) {
+    Optional<UserModel> userOpt = findUserByEmail(email);
+
+    if (userOpt.isEmpty()) {
+        return new PasswordResetEligibilityResponse(false,
+                "If an account with this email exists, a password reset OTP will be sent",
+                false, false);
+    }
+
+    UserModel user = userOpt.get();
+
+    // Check if user has a password (can reset password)
+    if (user.hasPassword()) {
+        return new PasswordResetEligibilityResponse(true,
+                "User can reset password", true, false);
+    }
+
+    // User doesn't have password - check if they have Google auth
+    if (user.hasGoogleAuth()) {
+        return new PasswordResetEligibilityResponse(false,
+                "This account uses Google authentication. Please link a password to your account first or use Google login.",
+                false, true);
+    }
+
+    // User has neither password nor Google auth (shouldn't happen in normal flow)
+    return new PasswordResetEligibilityResponse(false,
+            "This account doesn't have password authentication enabled.",
+            false, false);
+}
 
 
 
