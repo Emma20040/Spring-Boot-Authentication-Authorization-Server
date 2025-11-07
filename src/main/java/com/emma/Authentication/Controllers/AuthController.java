@@ -283,6 +283,25 @@ public class AuthController {
     }
 
 
+//change password
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(
+            @Valid @RequestBody ChangePasswordRequest changePasswordRequest
+    ){
+        authService.changePassword(changePasswordRequest.currentPassword(), changePasswordRequest.newPassword());
+        return ResponseEntity.ok().body("password changed successfully");
+    }
+
+
+//    set username
+    @PostMapping("/set-username")
+    public  ResponseEntity<?> setUsername(
+            @Valid @RequestBody SetUsernameRequest setUsernameRequest
+    ){
+        authService.setUsername(setUsernameRequest.username());
+        return  ResponseEntity.ok().body("username successfully set");
+    }
+
 
     // Helper method - adjust based on your JWT structure
     private UUID extractUserIdFromAuthentication(Authentication authentication) {

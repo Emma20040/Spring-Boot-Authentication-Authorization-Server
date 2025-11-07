@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,6 +29,9 @@ import com.google.api.client.json.jackson2.JacksonFactory;
 import com.emma.Authentication.Repositories.UserRepository;
 import com.emma.Authentication.UserModel.UserModel;
 import com.emma.Authentication.Utils.JwtActions;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 
 @Service
@@ -603,6 +607,44 @@ public class AuthService {
     }
 
 
+//    --------- CHANGE CURRENT PASSWORD --------
+
+    public void changePassword(String currentPassword, String newPassword){
+        // Get current authenticated user from SecurityContext
+        var user = getCurrentAuthenticatedUser();
+
+//        SECURITY CHECK: checks if user is registered with google (and has no password) prevent server from processing null password fields
+        if (user.getPassword() == null) {
+            String message = "no password is saved, link your account before you can change password ";
+        }
+        if (!verifyPassword(currentPassword, user.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Your password does match your saved password");
+        }
+
+        String hashPassword = passwordEncoder.encode(newPassword);
+        user.setPassword(hashPassword);
+        userRepository.save(user);
+    }
+
+
+//    -------- SET USERNAME(only for users that singup with google) -----------
+    public void setUsername(String username){
+        var user = getCurrentAuthenticatedUser();
+
+//        check if username already exist
+        if (user.getUsername() != null){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username already exist ");
+        }
+        if (findUserByUsername(username).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username is already taken by another user");
+        }
+
+        user.setUsername(username);
+        userRepository.save(user);
+
+    }
+
+
 //    -------------- HELPER METHODS ------------
 
     // Validate Google token
@@ -768,35 +810,52 @@ public class AuthService {
 
 
 //    Check if user is eligible for password reset
-public PasswordResetEligibilityResponse checkPasswordResetEligibility(String email) {
-    Optional<UserModel> userOpt = findUserByEmail(email);
+    public PasswordResetEligibilityResponse checkPasswordResetEligibility(String email) {
+        Optional<UserModel> userOpt = findUserByEmail(email);
 
-    if (userOpt.isEmpty()) {
+        if (userOpt.isEmpty()) {
+            return new PasswordResetEligibilityResponse(false,
+                    "If an account with this email exists, a password reset OTP will be sent",
+                    false, false);
+        }
+
+        UserModel user = userOpt.get();
+
+        // Check if user has a password (can reset password)
+        if (user.hasPassword()) {
+            return new PasswordResetEligibilityResponse(true,
+                    "User can reset password", true, false);
+        }
+
+        // User doesn't have password - check if they have Google auth
+        if (user.hasGoogleAuth()) {
+            return new PasswordResetEligibilityResponse(false,
+                    "This account uses Google authentication. Please link a password to your account first or use Google login.",
+                    false, true);
+        }
+
+        // User has neither password nor Google auth (shouldn't happen in normal flow)
         return new PasswordResetEligibilityResponse(false,
-                "If an account with this email exists, a password reset OTP will be sent",
+                "This account doesn't have password authentication enabled.",
                 false, false);
     }
 
-    UserModel user = userOpt.get();
+    //  method to get current authenticated user
+    private UserModel getCurrentAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-    // Check if user has a password (can reset password)
-    if (user.hasPassword()) {
-        return new PasswordResetEligibilityResponse(true,
-                "User can reset password", true, false);
+        if (authentication == null || !(authentication.getPrincipal() instanceof Jwt)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Only authenticated users can perform this action");
+        }
+
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+        String userId = jwt.getSubject();
+
+        return userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "User not found"));
     }
-
-    // User doesn't have password - check if they have Google auth
-    if (user.hasGoogleAuth()) {
-        return new PasswordResetEligibilityResponse(false,
-                "This account uses Google authentication. Please link a password to your account first or use Google login.",
-                false, true);
-    }
-
-    // User has neither password nor Google auth (shouldn't happen in normal flow)
-    return new PasswordResetEligibilityResponse(false,
-            "This account doesn't have password authentication enabled.",
-            false, false);
-}
 
 
 

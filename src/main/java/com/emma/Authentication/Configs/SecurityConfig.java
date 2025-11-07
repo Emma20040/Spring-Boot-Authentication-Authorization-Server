@@ -50,6 +50,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/auth/auth-methods").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/connect-google").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/enable-password").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/change-password").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/set-username").authenticated()
 
 
                         .anyRequest().authenticated())
