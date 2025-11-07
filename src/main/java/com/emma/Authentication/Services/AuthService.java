@@ -10,16 +10,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 import static com.emma.Authentication.enums.Roles.USER;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
@@ -32,6 +30,9 @@ import com.emma.Authentication.Repositories.UserRepository;
 import com.emma.Authentication.UserModel.UserModel;
 import com.emma.Authentication.Utils.JwtActions;
 
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+
 
 @Service
 public class AuthService {
@@ -43,6 +44,10 @@ public class AuthService {
     private final JwtActions jwtActions;
     private final JwtBlacklistService jwtBlacklistService;
     private final AccountLinkingService accountLinkingService;
+
+    private final String PASSWORD_RESET_TOKEN_KEY = "password_reset:";
+    private final long PASSWORD_RESET_TOKEN_EXPIRATION = 1800;
+
 
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -509,6 +514,139 @@ public class AuthService {
 
 //-----end of account linking ------
 
+
+
+//    ------------ RESET PASSWORD ------------
+//    Initiate password reset process - generate OTP and send email
+    public void initiatePasswordReset(InitiatePasswordResetRequest request) {
+        PasswordResetEligibilityResponse eligibility = checkPasswordResetEligibility(request.email());
+
+        if (!eligibility.eligible()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, eligibility.message());
+        }
+
+        var user = findUserByEmail(request.email())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email"));
+
+        // Generate 6-digit OTP
+        String otp = generateSixDigitOtp();
+
+        String redisKey = PASSWORD_RESET_TOKEN_KEY + otp;
+
+        String resetData = user.getEmail() + "|" + user.getId().toString();
+
+        redisTemplate.opsForValue().set(redisKey, resetData, Duration.ofSeconds(PASSWORD_RESET_TOKEN_EXPIRATION));
+
+        // Send OTP via email
+        sendPasswordResetOtpEmail(user.getEmail(), otp);
+
+        logger.info("Password reset OTP generated for user: {} - OTP: {}", maskEmail(user.getEmail()), otp);
+    }
+
+//      Verify OTP and reset password
+
+    public void verifyOtpAndResetPassword(VerifyOtpAndResetPasswordRequest request) {
+        String redisKey = PASSWORD_RESET_TOKEN_KEY + request.otp();
+        String resetData = (String) redisTemplate.opsForValue().get(redisKey);
+
+        if (resetData == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired OTP");
+        }
+
+        // Parse the string data (format: email|userId)
+        String[] parts = resetData.split("\\|");
+        if (parts.length < 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid OTP data");
+        }
+
+        String email = parts[0];
+        UUID userId = UUID.fromString(parts[1]);
+
+        var user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not found"));
+
+        // Validate new password
+        if (request.newPassword() == null || request.newPassword().trim().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password cannot be empty");
+        }
+
+        if (request.newPassword().length() < 6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password must be at least 6 characters");
+        }
+
+        // Update password
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+
+        // Clean up Redis token
+        redisTemplate.delete(redisKey);
+
+        logger.info("Password successfully reset for user: {}", maskEmail(email));
+    }
+
+
+    //      Send password reset OTP email
+    private void sendPasswordResetOtpEmail(String email, String otp) {
+        try {
+            String subject = "Password Reset OTP";
+            String content = "Hello,\n\n" +
+                    "You requested to reset your password. Use the following OTP to proceed:\n\n" +
+                    "OTP: " + otp + "\n\n" +
+                    "This OTP will expire in 30 minutes.\n\n" +
+                    "If you didn't request this, please ignore this email.\n\n" +
+                    "Best regards,\nThe Team";
+
+            emailServices.sendEmail(email, subject, content);
+            logger.info("Password reset OTP sent to: {}", maskEmail(email));
+
+        } catch (MessagingException e) {
+            logger.error("Failed to send password reset OTP to: {}", maskEmail(email), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to send password reset email. Please try again.");
+        }
+    }
+
+
+//    --------- CHANGE CURRENT PASSWORD --------
+
+    public void changePassword(String currentPassword, String newPassword){
+        // Get current authenticated user from SecurityContext
+        var user = getCurrentAuthenticatedUser();
+
+//        SECURITY CHECK: checks if user is registered with google (and has no password) prevent server from processing null password fields
+        if (user.getPassword() == null) {
+            String message = "no password is saved, link your account before you can change password ";
+        }
+        if (!verifyPassword(currentPassword, user.getPassword())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Your password does match your saved password");
+        }
+
+        String hashPassword = passwordEncoder.encode(newPassword);
+        user.setPassword(hashPassword);
+        userRepository.save(user);
+    }
+
+
+//    -------- SET USERNAME(only for users that singup with google) -----------
+    public void setUsername(String username){
+        var user = getCurrentAuthenticatedUser();
+
+//        check if username already exist
+        if (user.getUsername() != null){
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username already exist ");
+        }
+        if (findUserByUsername(username).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username is already taken by another user");
+        }
+
+        user.setUsername(username);
+        userRepository.save(user);
+
+    }
+
+
+//    -------------- HELPER METHODS ------------
+
     // Validate Google token
     public TokenValidationResult validateGoogleToken(String googleId, String maskedEmail) {
         try {
@@ -548,7 +686,6 @@ public class AuthService {
         }
         return null;
     }
-
 
 
 
@@ -611,6 +748,113 @@ public class AuthService {
                     .success(false)
                     .build();
         }
+    }
+
+
+
+//      Generate 6-digit OTP
+    private String generateSixDigitOtp() {
+        Random random = new Random();
+        int number = random.nextInt(1000000);
+        return String.format("%06d", number);
+    }
+
+
+//     Resend password reset OTP
+    public void resendPasswordResetOtp(ResendOtpRequest request) {
+        var user = findUserByEmail(request.email())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email"));
+
+        // Check eligibility again
+        PasswordResetEligibilityResponse eligibility = checkPasswordResetEligibility(request.email());
+        if (!eligibility.eligible()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, eligibility.message());
+        }
+
+        // Check if there's an existing OTP and delete it
+        String existingOtp = findExistingPasswordResetOtp(request.email());
+        if (existingOtp != null) {
+            redisTemplate.delete(PASSWORD_RESET_TOKEN_KEY + existingOtp);
+        }
+
+        // Generate new OTP
+        initiatePasswordReset(new InitiatePasswordResetRequest(request.email()));
+    }
+
+
+
+    //     Find existing password reset OTP for email
+    private String findExistingPasswordResetOtp(String email) {
+        String pattern = PASSWORD_RESET_TOKEN_KEY + "*";
+        var keys = redisTemplate.keys(pattern);
+
+        if (keys != null) {
+            for (String key : keys) {
+                String resetData = (String) redisTemplate.opsForValue().get(key);
+                if (resetData != null && resetData.startsWith(email + "|")) {
+                    return key.substring(PASSWORD_RESET_TOKEN_KEY.length());
+                }
+            }
+        }
+        return null;
+    }
+
+
+//      Validate OTP without resetting password (for frontend verification)
+    public ValidateOtpResponse validatePasswordResetOtp(String otp) {
+        String redisKey = PASSWORD_RESET_TOKEN_KEY + otp;
+
+        String resetData = (String) redisTemplate.opsForValue().get(redisKey);
+        return new ValidateOtpResponse(resetData != null);
+    }
+
+
+//    Check if user is eligible for password reset
+    public PasswordResetEligibilityResponse checkPasswordResetEligibility(String email) {
+        Optional<UserModel> userOpt = findUserByEmail(email);
+
+        if (userOpt.isEmpty()) {
+            return new PasswordResetEligibilityResponse(false,
+                    "If an account with this email exists, a password reset OTP will be sent",
+                    false, false);
+        }
+
+        UserModel user = userOpt.get();
+
+        // Check if user has a password (can reset password)
+        if (user.hasPassword()) {
+            return new PasswordResetEligibilityResponse(true,
+                    "User can reset password", true, false);
+        }
+
+        // User doesn't have password - check if they have Google auth
+        if (user.hasGoogleAuth()) {
+            return new PasswordResetEligibilityResponse(false,
+                    "This account uses Google authentication. Please link a password to your account first or use Google login.",
+                    false, true);
+        }
+
+        // User has neither password nor Google auth (shouldn't happen in normal flow)
+        return new PasswordResetEligibilityResponse(false,
+                "This account doesn't have password authentication enabled.",
+                false, false);
+    }
+
+    //  method to get current authenticated user
+    private UserModel getCurrentAuthenticatedUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || !(authentication.getPrincipal() instanceof Jwt)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Only authenticated users can perform this action");
+        }
+
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+        String userId = jwt.getSubject();
+
+        return userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "User not found"));
     }
 
 

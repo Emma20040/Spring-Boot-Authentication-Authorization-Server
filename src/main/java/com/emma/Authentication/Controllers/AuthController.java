@@ -4,6 +4,8 @@ import com.emma.Authentication.DTOs.*;
 import com.emma.Authentication.Services.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -156,7 +158,7 @@ public class AuthController {
         return ResponseEntity.badRequest().body(Map.of("error", "Invalid authorization header"));
     }
 
-//    ------- link accounts ---
+//    ------- LINK ACCOUNT ---
 
     @GetMapping("/auth-methods")
     public ResponseEntity<?> getUserAuthenticationMethods(Authentication authentication) {
@@ -202,6 +204,104 @@ public class AuthController {
                     "Failed to enable password authentication");
         }
     }
+
+
+// ------------ RESET PASSWORD -----------
+//    initaite password reste process
+    // Update your password reset endpoints to use DTOs
+
+    @PostMapping("/password-reset/initiate")
+    public ResponseEntity<PasswordResetResponse> initiatePasswordReset(
+            @Valid @RequestBody InitiatePasswordResetRequest request) {
+        try {
+            authService.initiatePasswordReset(request);
+            return ResponseEntity.ok(PasswordResetResponse.success("Password reset OTP sent to your email"));
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Failed to initiate password reset", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(PasswordResetResponse.error("Failed to initiate password reset"));
+        }
+    }
+
+    @PostMapping("/password-reset/verify")
+    public ResponseEntity<PasswordResetResponse> verifyOtpAndResetPassword(
+            @Valid @RequestBody VerifyOtpAndResetPasswordRequest request) {
+        try {
+            authService.verifyOtpAndResetPassword(request);
+            return ResponseEntity.ok(PasswordResetResponse.success("Password reset successfully"));
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Failed to reset password", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(PasswordResetResponse.error("Failed to reset password"));
+        }
+    }
+
+    @PostMapping("/password-reset/resend")
+    public ResponseEntity<PasswordResetResponse> resendPasswordResetOtp(
+            @Valid @RequestBody ResendOtpRequest request) {
+        try {
+            authService.resendPasswordResetOtp(request);
+            return ResponseEntity.ok(PasswordResetResponse.success("New OTP sent to your email"));
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Failed to resend OTP", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(PasswordResetResponse.error("Failed to resend OTP"));
+        }
+    }
+
+//for frontend to check validation status
+    @GetMapping("/password-reset/validate-otp/{otp}")
+    public ResponseEntity<ValidateOtpResponse> validatePasswordResetOtp(@PathVariable String otp) {
+        try {
+            ValidateOtpResponse response = authService.validatePasswordResetOtp(otp);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Failed to validate OTP", e);
+            return ResponseEntity.ok(new ValidateOtpResponse(false));
+        }
+    }
+
+//    check if user can change password
+    @GetMapping("/password-reset/check-eligibility")
+    public ResponseEntity<PasswordResetEligibilityResponse> checkPasswordResetEligibility(
+            @RequestBody PasswordResetEligibiltyRequest  passwordResetEligibiltyRequest) {
+        try {
+            PasswordResetEligibilityResponse response = authService.checkPasswordResetEligibility(passwordResetEligibiltyRequest.email());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Failed to check password reset eligibility", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new PasswordResetEligibilityResponse(false,
+                            "Failed to check eligibility", false, false));
+        }
+    }
+
+
+//change password
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(
+            @Valid @RequestBody ChangePasswordRequest changePasswordRequest
+    ){
+        authService.changePassword(changePasswordRequest.currentPassword(), changePasswordRequest.newPassword());
+        return ResponseEntity.ok().body("password changed successfully");
+    }
+
+
+//    set username
+    @PostMapping("/set-username")
+    public  ResponseEntity<?> setUsername(
+            @Valid @RequestBody SetUsernameRequest setUsernameRequest
+    ){
+        authService.setUsername(setUsernameRequest.username());
+        return  ResponseEntity.ok().body("username successfully set");
+    }
+
 
     // Helper method - adjust based on your JWT structure
     private UUID extractUserIdFromAuthentication(Authentication authentication) {
