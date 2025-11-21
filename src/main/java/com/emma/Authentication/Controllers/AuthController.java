@@ -1,6 +1,8 @@
 package com.emma.Authentication.Controllers;
 
 import com.emma.Authentication.DTOs.*;
+import com.emma.Authentication.RateLimiter.RateLimit;
+import com.emma.Authentication.RateLimiter.RateLimitType;
 import com.emma.Authentication.Services.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -81,6 +83,7 @@ public class AuthController {
 
     //    ----------- LOGIN  ---------
 //    manual login
+    @RateLimit(limit = 2, timeWindowSeconds = 60, type = RateLimitType.IP)
     @PostMapping("/login")
     public ResponseEntity<Map<String, String>> loginUser(@RequestBody @Valid LoginDto loginDTO) {
         LoginResponse response = authService.manualLogin(loginDTO.emailOrUsername(), loginDTO.password());

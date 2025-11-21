@@ -4,7 +4,7 @@
 1.0
 
 ## Introduction
-This document outlines the design and functionality of the User Authentication and Authorization Server , a backend Spring Boot application for secure user authentication and authorization via REST APIs. The system supports manual signup/login (with email verification), Google OAuth2 signup/login (with username and password prompt), account linking, password reset, logout, and JWT refresh to maintain sessions until explicit logout. All users have a unique email, username, and non-nullable password. It integrates Redis for temporary storage, caching, rate limiting, token blacklisting, and refresh token management; Google reCAPTCHA v3 for bot protection; and hybrid rate limiting (email/IP-based) to prevent abuse. JSON Web Tokens (JWTs) are short-lived, paired with long-lived refresh tokens for session continuity, designed for testing with tools like Postman.
+This document outlines the design and functionality of the User Authentication and Authorization Server , a backend Spring Boot application for secure user authentication and authorization via REST APIs. The system supports manual signup/login (with email verification), Google OAuth2 signup/login (with username and password prompt), account linking, password reset, logout, and JWT refresh to maintain sessions until explicit logout. All users have a unique email and username. It integrates Redis for temporary storage, caching, rate limiting, token blacklisting, and refresh token management; Google reCAPTCHA v3 for bot protection; and hybrid rate limiting (userId/IP-based) to prevent abuse. JSON Web Tokens (JWTs) are short-lived, paired with long-lived refresh tokens for session continuity, designed for testing with tools like Postman.
 
 ## System Architecture
 ### Technology Stack
@@ -37,7 +37,7 @@ This document outlines the design and functionality of the User Authentication a
   - Account linking: link:<link_token> (TTL: 10 minutes, {email, google_id})
   - Password reset: reset:<reset_token> (TTL: 24 hours, {email, created_at})
 - Caching: User profiles (user:<email>, TTL: 1 hour, {username, email, role})
-- Rate Limiting: ratelimit:<endpoint>:<email> or ratelimit:<endpoint>:<ip> (TTL: 1 hour, request count)
+- Rate Limiting: ratelimit:<endpoint>:<userId> or ratelimit:<endpoint>:<ip> (TTL: 1 hour, request count)
 - Token Management: 
   - blacklist:<jwt> (TTL: JWT expiration, flag)
   - refresh:<refresh_token> (TTL: 7 days, {user_email, expiry})
@@ -49,7 +49,7 @@ This document outlines the design and functionality of the User Authentication a
 - Google OAuth2: ID token verification
 - reCAPTCHA v3: Protects unauthenticated endpoints; score threshold (e.g., >0.5 for human)
 - Hybrid Rate Limiting:
-  - Email-based: 3–5 requests/hour (e.g., reset/signup)
+  - userId-based: 3–5 requests/hour (e.g., reset/signup)
   - IP-based fallback: 10 requests/hour for unauthenticated endpoints
 - Logout: Blacklists JWT and invalidates refresh token in Redis to end session(from a single device and all devices)
 - Other: HTTPS, secure tokens (UUID/cryptographically secure), logging
@@ -85,7 +85,7 @@ This document outlines the design and functionality of the User Authentication a
 - POST /api/auth/refresh: {refresh_token}; refreshes JWT
 - POST /api/auth/logout: Authorization: Bearer <jwt>; blacklists JWT, invalidates refresh token
 - POST /api/auth/logout-all: Authorization: Bearer <jwt>; blacklists JWT, invalidates all refresh tokens
-- /api/admin: Example endpoint, requires ROLE_ADMIN
+
 
 ## Detailed Flows
 ### Manual Signup
@@ -105,7 +105,7 @@ This document outlines the design and functionality of the User Authentication a
 
 ### Manual Login
 1. POST /api/auth/login with email/username, password, optional reCAPTCHA
-2. Validate reCAPTCHA (if used), rate limit (email: 10/hour, optional)
+2. Validate reCAPTCHA, rate limit (ip: 10/hour)
 3. Verify password, cache user in Redis, issue JWT + refresh token
 
 ### Google OAuth2 Login
@@ -117,7 +117,7 @@ This document outlines the design and functionality of the User Authentication a
 1. Manual user attempts Google login
 2. Store in Redis (link:<link_token>, TTL: 10 minutes)
 3. POST /api/auth/link-google with reCAPTCHA token, password
-4. Validate reCAPTCHA, rate limit (email: 5/hour)
+4. Validate reCAPTCHA, rate limit (userId: 5/hour)
 5. Verify password, set google_id, issue JWT + refresh token
 
 ### Password Reset
@@ -127,6 +127,12 @@ This document outlines the design and functionality of the User Authentication a
 4. Send reset email
 5. POST /api/auth/complete-reset-password, update password, issue JWT + refresh token
 6. Resend via /api/auth/request-password-reset if expired
+
+## Change Password
+1. POST /api/auth/change-password with JWT
+2. Rate limit(3/day)
+3. validate current password to make sure it matches
+4. Set new password
 
 ### JWT Refresh
 1. POST /api/auth/refresh with refresh_token
@@ -153,7 +159,7 @@ This document outlines the design and functionality of the User Authentication a
 10. Invalid Refresh Token: Return “Invalid refresh token.”
 11. Expired Refresh Token: Return “Session expired, re-login.”
 12. Logout with Invalid JWT: Return HTTP 401.
-13. Users that registered with google and want to login manually or users that registered manually but want to login with google
+13. Account linking for users that registered with google and want to login manually or users that registered manually but want to login with google
 
 ## Deployment and Monitoring
 - Deployment: Docker, cloud (AWS).
@@ -165,16 +171,13 @@ This document outlines the design and functionality of the User Authentication a
 - Integrate additional OAuth providers (e.g., Facebook).
 
 ## Contact
-For updates or issues, contact the development team or refer to project sources.
-**
+For updates or issues, contact me at emmanuelfongong10@gmail.com
 
-**** TODO: VERY IMPORTANT SECURITY CHECK ******: WHAT IS SOMEONE SINGUPED WITH GOOGLE(googleId and email) BUT WANT TO LOGIN(MANUALLY) THE PASSWORD IS NULL. SO HE TRIES TO LOGIN INTO SOMEONE ACCOUNT(HE KNOWS THE EMAIL) SO HE PUTS THE EMAIL AND LEAVE THE PASSWORD FIELD AS BLANK? DOES THIS MEANS HE WILL HAVE ACCESS TO THIS PERSON'S ACCOUNT?
+## Reference
+-https://github.com/VivekRajyaguru/spring-redis-ratelimiter
+-https://dzone.com/articles/custom-spring-boot-redis-rate-limiter?fromrel=true
 
-*****TODO:  SECURITY: IN THE RESET PASSWORD I MUST MAKE SURE THAT USER THAT SIGNUP WITH GOOGLE CAN'T RESET THEIR PASSWORDS UNTIL THEY HAVE LINKED THE ACCOUNTS 
 
-how does login with google works since it uses no password just the user email? does it means that if i know some one email i login into their account?
-
-this code you have given links the accounts during login but isn't that less secure and it also works well if i have only two authentication methods, what if i added 5 other authentication? that means i have to refactor the code each time which makes the code not reusable. sinnce most big companies allow linking accounts only when the user is login lets allow the system to link account only for login users.
 
 
 
