@@ -176,7 +176,7 @@ For updates or issues, contact me at emmanuelfongong10@gmail.com
 ## Reference
 -https://github.com/VivekRajyaguru/spring-redis-ratelimiter
 -https://dzone.com/articles/custom-spring-boot-redis-rate-limiter?fromrel=true
-
+-https://gist.github.com/scalaview/fdf1890602e661f2e9a7ce2a6bd1f64e
 
 
 

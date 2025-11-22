@@ -3,6 +3,7 @@ package com.emma.Authentication.RateLimiter;
 import com.emma.Authentication.Services.AuthService;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -24,75 +25,15 @@ public class RedisRateLimiter {
     // Lua script for token bucket algorithm
     @PostConstruct
     public void init() {
-        tokenBucketScript = new DefaultRedisScript<>();
-        tokenBucketScript.setScriptText(
-                "local key = KEYS[1] " +
-                        "local limit = tonumber(ARGV[1]) " +           // ARGV[1] = limit (burstTokens)
-                        "local window = tonumber(ARGV[2]) " +          // ARGV[2] = timeWindowSeconds
-                        "local refillTime = tonumber(ARGV[3]) " +      // ARGV[3] = currentTime in seconds
-                        " " +
-                        "local intervalPerPermit = window / limit " +  // Calculate interval between permits
-                        "local burstTokens = limit " +                 // burstTokens same as limit
-                        "local interval = window " +                   // interval same as window in seconds
-                        " " +
-                        "local bucket = redis.call('hgetall', key) " +
-                        "local currentTokens " +
-                        " " +
-                        "if table.maxn(bucket) == 0 then " +
-                        "    -- first check if bucket not exists, if yes, create a new one with full capacity " +
-                        "    currentTokens = burstTokens " +
-                        "    redis.call('hset', key, 'lastRefillTime', refillTime) " +
-                        "elseif table.maxn(bucket) == 4 then " +
-                        "    -- if bucket exists, first we try to refill the token bucket " +
-                        "    local lastRefillTime, tokensRemaining = tonumber(bucket[2]), tonumber(bucket[4]) " +
-                        " " +
-                        "    if refillTime > lastRefillTime then " +
-                        "        -- if refillTime larger than lastRefillTime, we should refill the token buckets " +
-                        "        local intervalSinceLast = refillTime - lastRefillTime " +
-                        "        if intervalSinceLast > interval then " +
-                        "            currentTokens = burstTokens " +
-                        "            redis.call('hset', key, 'lastRefillTime', refillTime) " +
-                        "        else " +
-                        "            local grantedTokens = math.floor(intervalSinceLast / intervalPerPermit) " +
-                        "            if grantedTokens > 0 then " +
-                        "                -- adjust lastRefillTime, we want shift left the refill time " +
-                        "                local padMillis = math.fmod(intervalSinceLast, intervalPerPermit) " +
-                        "                redis.call('hset', key, 'lastRefillTime', refillTime - padMillis) " +
-                        "            end " +
-                        "            currentTokens = math.min(grantedTokens + tokensRemaining, limit) " +
-                        "        end " +
-                        "    else " +
-                        "        -- if not, it means some other operation later than this call made the call first " +
-                        "        currentTokens = tokensRemaining " +
-                        "    end " +
-                        "end " +
-                        " " +
-                        "assert(currentTokens >= 0) " +
-                        " " +
-                        "local allowed = 0 " +
-                        "local remaining = 0 " +
-                        "local retryAfter = 0 " +
-                        " " +
-                        "if currentTokens == 0 then " +
-                        "    -- we didn't consume any keys " +
-                        "    redis.call('hset', key, 'tokensRemaining', currentTokens) " +
-                        "    allowed = 0 " +
-                        "    remaining = 0 " +
-                        "    -- Calculate retry after time " +
-                        "    retryAfter = intervalPerPermit " +
-                        "else " +
-                        "    redis.call('hset', key, 'tokensRemaining', currentTokens - 1) " +
-                        "    allowed = 1 " +
-                        "    remaining = currentTokens - 1 " +
-                        "end " +
-                        " " +
-                        "-- Set expiration time for the key " +
-                        "redis.call('expire', key, window) " +
-                        " " +
-                        "return {allowed, remaining, retryAfter}"
-
-        );
-        tokenBucketScript.setResultType(List.class);
+        try {
+            tokenBucketScript = new DefaultRedisScript<>();
+            tokenBucketScript.setLocation(new ClassPathResource("token_bucket_rate_limiter.lua"));
+            tokenBucketScript.setResultType(List.class);
+            logger.info("Lua script loaded successfully from file");
+        } catch (Exception e) {
+            logger.error("Failed to load Lua script from file", e);
+            throw new RuntimeException("Failed to initialize rate limiter", e);
+        }
     }
 
 
