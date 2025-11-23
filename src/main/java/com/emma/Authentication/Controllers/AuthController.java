@@ -83,7 +83,7 @@ public class AuthController {
 
     //    ----------- LOGIN  ---------
 //    manual login
-    @RateLimit(limit = 2, timeWindowSeconds = 60, type = RateLimitType.IP)
+    @RateLimit(limit = 5, timeWindowSeconds = 60, type = RateLimitType.IP)
     @PostMapping("/login")
     public ResponseEntity<Map<String, String>> loginUser(@RequestBody @Valid LoginDto loginDTO) {
         LoginResponse response = authService.manualLogin(loginDTO.emailOrUsername(), loginDTO.password());
@@ -287,6 +287,7 @@ public class AuthController {
 
 
 //change password
+    @RateLimit(limit=2, timeWindowSeconds = 120, type = RateLimitType.IP )
     @PostMapping("/change-password")
     public ResponseEntity<?> changePassword(
             @Valid @RequestBody ChangePasswordRequest changePasswordRequest

@@ -40,6 +40,8 @@ public class RedisRateLimiter {
 
     public RateLimitResult isAllowed(String key, int limit, int timeWindowSeconds) {
         long currentTime = System.currentTimeMillis() / 1000;
+//        debuging to see time
+        System.out.println("||||||||| current system time: " +currentTime);
 
         List<Long> result = redisTemplate.execute(
                 tokenBucketScript,

@@ -841,7 +841,7 @@ public class AuthService {
     }
 
     //  method to get current authenticated user
-    private UserModel getCurrentAuthenticatedUser() {
+    public UserModel getCurrentAuthenticatedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null || !(authentication.getPrincipal() instanceof Jwt)) {
