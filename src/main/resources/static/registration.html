@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.w3.org/1999/xhtml">
+<head>
+
+
+
+    <script th:src='|https://www.google.com/recaptcha/api.js?render=${@captchaService.getReCaptchaSite()}'></script>
+</head>
+<body>
+
+
+
+<form method="POST" enctype="utf8">
+
+
+    <input type="hidden" id="response" name="response" value="" />
+
+</form>
+
+
+
+<script th:inline="javascript">
+
+    var siteKey = /*[[${@captchaService.getReCaptchaSite()}]]*/;
+    grecaptcha.ready(function() {
+        grecaptcha.execute(siteKey, {action: /*[[${T(com.baeldung.captcha.CaptchaService).REGISTER_ACTION}]]*/})
+        .then(function(token) {
+            $('#response').val(token);
+
+            // Submit the form after getting the token
+            $.ajax({
+                type: "POST",
+                url: "/user/registration",
+                data: $('form').serialize(),
+                success: function(response) {
+                    // Handle success response
+                },
+                error: function(xhr) {
+                    // Handle error response
+                }
+            });
+        });
+    });
+</script>
+</body>
+</html>

@@ -75,7 +75,7 @@ public class RateLimitAspect {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null || !(authentication.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt)) {
-            logger.debug("User not authenticated ");
+            logger.debug("User not authenticated");
             return "anonymous";
         }
 
