@@ -1,46 +1,51 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.w3.org/1999/xhtml">
+<html>
 <head>
-
-
-
-    <script th:src='|https://www.google.com/recaptcha/api.js?render=${@captchaService.getReCaptchaSite()}'></script>
+    <title>reCAPTCHA v3 Test - No Form</title>
+    <script src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY"></script>
 </head>
 <body>
+<h2>Test reCAPTCHA v3</h2>
 
+<button onclick="getToken()">Get reCAPTCHA Token</button>
+<button onclick="verifyToken()">Verify Token</button>
 
+<div id="tokenDisplay"></div>
+<div id="result"></div>
 
-<form method="POST" enctype="utf8">
+<script>
+    let currentToken = '';
 
-
-    <input type="hidden" id="response" name="response" value="" />
-
-</form>
-
-
-
-<script th:inline="javascript">
-
-    var siteKey = /*[[${@captchaService.getReCaptchaSite()}]]*/;
-    grecaptcha.ready(function() {
-        grecaptcha.execute(siteKey, {action: /*[[${T(com.baeldung.captcha.CaptchaService).REGISTER_ACTION}]]*/})
-        .then(function(token) {
-            $('#response').val(token);
-
-            // Submit the form after getting the token
-            $.ajax({
-                type: "POST",
-                url: "/user/registration",
-                data: $('form').serialize(),
-                success: function(response) {
-                    // Handle success response
-                },
-                error: function(xhr) {
-                    // Handle error response
-                }
+    // Function to get token
+    function getToken() {
+        grecaptcha.ready(function() {
+            grecaptcha.execute('YOUR_SITE_KEY', {action: 'test'})
+            .then(function(token) {
+                currentToken = token;
+                document.getElementById('tokenDisplay').innerHTML =
+                    '<strong>Token obtained:</strong><br>' +
+                    token.substring(0, 50) + '...';
             });
         });
-    });
+    }
+
+    // Function to verify token
+    function verifyToken() {
+        if (!currentToken) {
+            alert('First get a token by clicking "Get reCAPTCHA Token"');
+            return;
+        }
+
+        // Send just the token to backend
+        fetch('/recaptchaV3/verify?token=' + currentToken)
+            .then(response => response.text())
+            .then(result => {
+                document.getElementById('result').innerHTML = result;
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = 'Error: ' + error;
+            });
+    }
 </script>
 </body>
 </html>

@@ -45,6 +45,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/password-reset/resend").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth//password-reset/validate-otp/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/password-reset/check-eligibility").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/recaptchaV3/site-key").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/recaptchaV3/verify").permitAll()
 
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout-all").authenticated()
