@@ -16,7 +16,7 @@ if table.maxn(bucket) == 0 then
     currentTokens = burstTokens
     redis.call('hset', key, 'lastRefillTime', refillTime, 'tokensRemaining', currentTokens)
 elseif table.maxn(bucket) == 4 then
-    -- if bucket exists, first we try to refill the token bucket
+    -- if bucket exists, try to refill the token bucket
     local lastRefillTime = tonumber(bucket[2])
     local tokensRemaining = tonumber(bucket[4])
 

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>reCAPTCHA v3 Test - No Form</title>
+    <script src="https://www.google.com/recaptcha/api.js?render=YOUR_SITE_KEY"></script>
+</head>
+<body>
+<h2>Test reCAPTCHA v3</h2>
+
+<button onclick="getToken()">Get reCAPTCHA Token</button>
+<button onclick="verifyToken()">Verify Token</button>
+
+<div id="tokenDisplay"></div>
+<div id="result"></div>
+
+<script>
+    let currentToken = '';
+
+    // Function to get token
+    function getToken() {
+        grecaptcha.ready(function() {
+            grecaptcha.execute('YOUR_SITE_KEY', {action: 'test'})
+            .then(function(token) {
+                currentToken = token;
+                document.getElementById('tokenDisplay').innerHTML =
+                    '<strong>Token obtained:</strong><br>' +
+                    token.substring(0, 50) + '...';
+            });
+        });
+    }
+
+    // Function to verify token
+    function verifyToken() {
+        if (!currentToken) {
+            alert('First get a token by clicking "Get reCAPTCHA Token"');
+            return;
+        }
+
+        // Send just the token to backend
+        fetch('/recaptchaV3/verify?token=' + currentToken)
+            .then(response => response.text())
+            .then(result => {
+                document.getElementById('result').innerHTML = result;
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = 'Error: ' + error;
+            });
+    }
+</script>
+</body>
+</html>

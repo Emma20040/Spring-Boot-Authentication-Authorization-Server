@@ -36,7 +36,7 @@ public class RateLimitAspect {
         RateLimit rateLimit = method.getAnnotation(RateLimit.class);
 
         String redisKey = buildRedisKey(rateLimit, method);
-        // Add debug logging
+
         logger.info("Rate limit check - Key: {}, Limit: {}, Window: {}s",
                 redisKey, rateLimit.limit(), rateLimit.timeWindowSeconds());
 
@@ -73,15 +73,23 @@ public class RateLimitAspect {
 
     private String getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.isAuthenticated()) {
-            Object principal = authentication.getPrincipal();
-            if (principal instanceof UserDetails) {
-                return ((UserDetails) principal).getUsername();
-            } else {
-                return authentication.getName();
-            }
+
+        if (authentication == null || !(authentication.getPrincipal() instanceof org.springframework.security.oauth2.jwt.Jwt)) {
+            logger.debug("User not authenticated");
+            return "anonymous";
         }
-        return "anonymous";
+
+        try {
+            org.springframework.security.oauth2.jwt.Jwt jwt = (org.springframework.security.oauth2.jwt.Jwt) authentication.getPrincipal();
+            String userId = jwt.getSubject();
+
+            logger.debug("Extracted user ID from JWT: {}", userId);
+            return userId;
+
+        } catch (Exception e) {
+            logger.warn("Failed to extract user ID from JWT", e);
+            return "anonymous";
+        }
     }
 
     private String getClientIp() {
