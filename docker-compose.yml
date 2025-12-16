@@ -1,0 +1,46 @@
+
+services:
+  app:
+    build: .
+    container_name: authentication_app
+    ports:
+      - "8080:8080"
+    environment:
+      DB_URL: ${DB_URL}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL}
+      SUPPORT_EMAIL_PASSWORD: ${SUPPORT_EMAIL_PASSWORD}
+
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY}
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY}
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+
+  postgres:
+    image: postgres:15
+    container_name: authentication_db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+
+  redis:
+    image: redis:7
+    container_name: redis_server
+    ports:
+      - "6379:6379"
+    restart: always
+
+volumes:
+  postgres_data:

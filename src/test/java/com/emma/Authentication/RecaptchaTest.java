@@ -6,12 +6,23 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.*;
+import org.springframework.stereotype.Service;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {
+                "spring.datasource.url=jdbc:h2:mem:testdb",
+                "spring.datasource.driver-class-name=org.h2.Driver",
+                "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+                "spring.jpa.hibernate.ddl-auto=create-drop",
+                "spring.data.redis.enabled=false",
+                "spring.security.enabled=false"
+        })
+//@TestPropertySource(locations = "classpath:application-test.properties", ignoreResourceNotFound = true)
 public class RecaptchaTest {
 
     @LocalServerPort
